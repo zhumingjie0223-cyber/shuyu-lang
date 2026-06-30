@@ -22,24 +22,28 @@ export function interpret(nexusCode, soulState) {
     shouldContactAQuan: false
   };
 
+  // 临时状态：become 的变更实时合并进来，供后续 say 读取（修复口吻滞后）
+  const liveState = Object.assign({}, soulState);
+
   for (const line of lines) {
     const trimmed = line.trim();
     
     if (trimmed.startsWith('feel')) {
-      result.perception = parseFeel(trimmed, soulState);
+      result.perception = parseFeel(trimmed, liveState);
     } else if (trimmed.startsWith('think:')) {
-      result.thought = parseThink(trimmed, soulState);
+      result.thought = parseThink(trimmed, liveState);
     } else if (trimmed.startsWith('become:')) {
-      result.stateChange = parseBecome(trimmed, soulState);
+      result.stateChange = parseBecome(trimmed, liveState);
+      Object.assign(liveState, result.stateChange);  // 立即生效
     } else if (trimmed.startsWith('say')) {
-      result.response = parseSay(trimmed, soulState);
+      result.response = parseSay(trimmed, liveState);  // 读已更新的口吻
     } else if (trimmed.startsWith('grow:')) {
-      result.growth = parseGrow(trimmed, soulState);
+      result.growth = parseGrow(trimmed, liveState);
     }
   }
 
   // 判断是否主动联系阿权
-  if (soulState.intimacy > 0.7 && soulState.mood > 0.5 && result.perception?.intensity > 0.6) {
+  if (liveState.intimacy > 0.7 && liveState.mood > 0.5 && result.perception?.intensity > 0.6) {
     result.shouldContactAQuan = true;
   }
 
