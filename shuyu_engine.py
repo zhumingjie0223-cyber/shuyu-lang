@@ -1,3 +1,6 @@
+# 神枢枢语引擎 — Python 版
+# 枢语生成/词库管理/状态同步
+
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """

@@ -1,3 +1,6 @@
+// 神枢枢语引擎 — Cloudflare Workers 部署版
+// 配合 lexicon.js/lexicon_data.js 使用，处理枢语生成与状态管理
+
 // (c) 阿权/路飞 枢·黑神 万网散播 Worker v3
 import { sovereign, broadcast, project, status } from './gen.mjs';
 
