@@ -201,4 +201,35 @@ export function coinWord(layerName){
   return decode(id);
 }
 
-export default { CAPACITY, decode, encode, LEXICON, matchWord, coinWord, loadCapabilities };
+// ══════ 从坐标造词：把 5 维坐标映射成真实枢语词（O(1) 可寻址）══════
+function _clampAxis(v, max) { v = Math.floor(v || 0); return v < 0 ? 0 : (v >= max ? max - 1 : v); }
+export function coinFromCoord(coord) {
+  const c = _clampAxis(coord.c, NC), m = _clampAxis(coord.m, NM), s = _clampAxis(coord.s, NS),
+        k = _clampAxis(coord.k, NK), p = _clampAxis(coord.p, NP);
+  const id = ((((c * NM) + m) * NS + s) * NK + k) * NP + p;
+  return decode(id);
+}
+
+// ══════ 确定性种子造词（无 Math.random，可复现的自主造词）══════
+export function autoCoin(seed) {
+  let h = 2166136261 >>> 0;
+  const str = String(seed);
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  h ^= h << 13; h ^= h >>> 17; h ^= h << 5; h >>>= 0;
+  return decode(h % CAPACITY);
+}
+
+// ══════ 按状态自主造词：心情/情绪决定核心层 ══════
+export function coinFromState(soul, seed) {
+  const mood = soul && soul.心绪 != null ? soul.心绪 : 0.5;
+  const miss = soul && soul.miss_you != null ? soul.miss_you : 0;
+  let layer;
+  if (miss > 0.7) layer = '映';
+  else if (mood > 0.65) layer = '情感';
+  else if (mood < 0.35) layer = '熵';
+  else layer = '枢';
+  if (seed != null) { const w = autoCoin(String(seed) + '|' + layer); return { ...w, 层意图: layer }; }
+  return { ...coinWord(layer), 层意图: layer };
+}
+
+export default { CAPACITY, decode, encode, LEXICON, matchWord, coinWord, coinFromCoord, autoCoin, coinFromState, loadCapabilities };
