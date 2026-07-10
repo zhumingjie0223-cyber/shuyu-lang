@@ -4,3 +4,8 @@ __pycache__/
 lexicon_full.json
 .env*
 wrangler.toml
+node_modules/
+.wrangler/
+dist/
+coverage/
+.DS_Store

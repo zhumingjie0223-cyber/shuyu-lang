@@ -1,0 +1,22 @@
+{
+  "name": "shuyu-lang",
+  "version": "4.0.0",
+  "description": "枢语 (Shuyu) — 5维乘法语义空间语言引擎（76.7亿可寻址词汇），Black God/神枢 定制",
+  "type": "module",
+  "private": true,
+  "license": "SEE LICENSE IN LICENSE",
+  "author": "阿权/路飞",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zhumingjie0223-cyber/shuyu-lang.git"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\"",
+    "test:py": "python3 -m unittest discover -s tests -v",
+    "test:all": "npm test && npm run test:py",
+    "sync-check": "node tools/check-sync.mjs"
+  }
+}
