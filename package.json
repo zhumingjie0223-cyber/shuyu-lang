@@ -14,7 +14,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "test": "node --test \"test/*.test.mjs\"",
+    "test": "node --test test/lexicon.test.mjs test/nexuslang.test.mjs test/parity.test.mjs test/worker.test.mjs",
     "test:py": "python3 -m unittest discover -s tests -v",
     "test:all": "npm test && npm run test:py",
     "sync-check": "node tools/check-sync.mjs"
