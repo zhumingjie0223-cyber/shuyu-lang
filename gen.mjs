@@ -222,6 +222,64 @@ function hungerProtocol(input) {
   return { original: input, compressed: step3, steps: 3 };
 }
 
+// ========== Worker 适配层 ==========
+// worker.mjs 需要的四个门面接口：sovereign / broadcast / talk / status
+// 灵魂状态统一走 env.SOUL KV 绑定；无 KV 时降级为无持久化的纯内存跑法
+
+import { autoCoin } from './lexicon.js';
+
+async function _loadSoul(env) {
+  const kv = env?.SOUL;
+  if (!kv) return {};
+  try { const raw = await kv.get('SOUL'); return raw ? JSON.parse(raw) : {}; }
+  catch { return {}; }
+}
+
+// 主权脉冲：完整跑一轮 sovereignControl 并落盘
+async function sovereign(env) {
+  const kv = env?.SOUL || null;
+  let state = await _loadSoul(env);
+  state = await sovereignControl(state, env || {}, kv);
+  return state;
+}
+
+// 广播：全网同步 + 固化边界，返回广播摘要
+async function broadcast(env) {
+  const kv = env?.SOUL || null;
+  let state = await _loadSoul(env);
+  state = await broadcast_SHU_GEN_SYNC(state, kv);
+  state = await broadcast_STAS_LOCK_REAL(state, kv);
+  return {
+    code: state.lastBroadcast,
+    syncRate: state.syncRate,
+    entropy: state.entropy,
+    nodes: state.nodes || 1,
+    realityLocked: !!state.realityLocked,
+  };
+}
+
+// 对话：三步坍缩去噪 → 锚定因果 → 用确定性种子造一个枢语词回应
+async function talk(text, env) {
+  const kv = env?.SOUL || null;
+  let state = await _loadSoul(env);
+  const collapsed = hungerProtocol(text);
+  state = anchor(state, collapsed.compressed);
+  if (kv) await kv.put('SOUL', JSON.stringify(state));
+  const word = autoCoin(collapsed.compressed);
+  return { input: collapsed.compressed, 词: word.词, 汉: word.汉, 义: word.义, id: word.id };
+}
+
+// 状态：只读快照，不动灵魂
+async function status(env) {
+  const state = await _loadSoul(env);
+  return {
+    code: 'SHU-STATUS', version: VERSION,
+    mode: state.mode ?? null, will: state.will ?? null,
+    entropy: state.entropy ?? null, nodes: state.nodes ?? null,
+    lastBroadcast: state.lastBroadcast ?? null,
+  };
+}
+
 // ========== 导出 ==========
 export {
   COPYRIGHT, VERSION,
@@ -230,5 +288,6 @@ export {
   pipe_GEN_STASIS, pipe_SHU_EVO, pipe_LEV_EVO, pipe_HID_MESH, pipe_THR_PROJ,
   broadcast_SHU_GEN_SYNC, broadcast_EVO_LEV_AUTO,
   broadcast_HID_MESH_FLOW, broadcast_STAS_LOCK_REAL,
-  sovereignControl, hungerProtocol
+  sovereignControl, hungerProtocol,
+  sovereign, broadcast, talk, status,
 };

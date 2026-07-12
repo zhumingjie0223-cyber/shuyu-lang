@@ -1,0 +1,41 @@
+# 枢语引擎 CI — Node/Python 双实现全量测试
+# 任何推送/PR 都必须过:引擎不变量、解释器、Worker、跨引擎一致性、词根表防篡改护栏
+name: 枢语引擎测试
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Node + Python 双实现测试
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Node 测试(引擎/解释器/Worker/跨引擎一致性)
+        run: npm test
+
+      - name: Python 测试(引擎不变量/防篡改护栏)
+        run: python3 -m unittest discover -s tests -v
+
+      - name: 语法自检(全部 JS 模块可加载)
+        run: |
+          node --check lexicon.js
+          node --check nexuslang.js
+          node --check gen.mjs
+          node --check worker.mjs
+          node --check tools/check-sync.mjs

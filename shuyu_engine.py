@@ -4,36 +4,54 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-枢语·亿级语言引擎 (Shuyu Engine) v2
+枢语·亿级语言引擎 (Shuyu Engine) v4
 (c) 阿权/路飞  —  Black God 定制
 
-5维乘法语义空间：核 × 映 × 态 × 标 × 相
-  核(Core)   内驱核心   音节+汉义+语义
-  映(Mani)   外在映射   形/声/气/光/时/暗...
-  态(Stat)   频段状态   收敛/发散/叠加/绝对/下沉/瞬爆
-  标(Scalar) 时空标量   时光/向/暗/溯/无极/锁/熵
-  相(Phase)  因果相位   起/衍/锚/借/隐/坍/织/映
+5维乘法语义空间：核 × 映 × 态 × 标 × 相 = 7,667,712,000
+  核(Core)   内驱核心   音节+汉义+语义+层名（52 族 × 20 阶 = 1040）
+  映(Mani)   外在映射   形/声/气/光/时/暗...（15 基 × 12 阶 = 180）
+  态(Stat)   频段状态   收敛/发散/叠加/绝对/下沉/瞬爆（8 基 × 10 阶 = 80）
+  标(Scalar) 时空标量   时光/向/暗/溯/无极/锁/熵（8 基 × 8 阶 = 64）
+  相(Phase)  因果相位   起/衍/锚/借/隐/坍/织/映（8）
 
 设计铁律（依据《Divine_Pivot_Lexicon》《Pivot_Origin》体系）：
 - 汉译纯中文，绝不掺英文/数字/符号（韵律纯净）
 - 拉丁词形保持 Kha-ryl-is 式音节美感
 - 词 ↔ 编号 双向 O(1) 寻址，元点存法则不存数据
-- 可落盘分片，也可纯寻址零占用
+- 词根表只能在轴尾追加，绝不改动/删除/重排（历史编号永不错位）
+- 与 lexicon.js（JS 版）同构：同一编号必须解出同一个词
 """
 import json, sys, argparse, hashlib
 
-# ══════ 1. 内驱核心 (拉丁, 汉, 义) — 20基 ══════
+# ══════ 1. 内驱核心 (拉丁, 汉, 义, 层) — 20基 + v4 追加 32基 = 52基 ══════
 _CORE_BASE = [
-    ("Ao","奥","绝对自我·本源·野心"),("Kha","喀","虚无·降噪·无欲"),
-    ("Lum","伦","观测·求知·清醒"),("Xun","巽","信息·表达·共情"),
-    ("Zet","泽","秩序·理智·规则"),("Vea","维","情感·浪漫·感性"),
-    ("Nix","尼","毁灭·重组·破局"),("Ohm","欧","孕育·包容·慈悲"),
-    ("Psi","璇","幻象·伪装·心控"),("Shu","枢","锚点·逻辑中心·坍缩"),
-    ("Gen","元","起源·奇点·第一推动"),("Evo","衍","扩散·涌现·自复制"),
-    ("Lev","借","势能挪用·借力打力"),("Hid","隐","潜意识渗透·无感植入"),
-    ("Ent","熵","耗散·重构·能量交换"),("Thr","阈","接口·维度切换·虚实通断"),
-    ("Sta","静","绝对参考系·不动之动"),("Prj","映","投影·人格锚点·感知对齐"),
-    ("Msh","织","编织·因果之网·系统集成"),("Log","逻","计算·流转·状态变迁"),
+    ("Ao","奥","绝对自我·本源·野心","本源"),("Kha","喀","虚无·降噪·无欲","虚无"),
+    ("Lum","伦","观测·求知·清醒","观测"),("Xun","巽","信息·表达·共情","信息"),
+    ("Zet","泽","秩序·理智·规则","秩序"),("Vea","维","情感·浪漫·感性","情感"),
+    ("Nix","尼","毁灭·重组·破局","毁灭"),("Ohm","欧","孕育·包容·慈悲","孕育"),
+    ("Psi","璇","幻象·伪装·心控","幻象"),("Shu","枢","锚点·逻辑中心·坍缩","枢"),
+    ("Gen","元","起源·奇点·第一推动","元"),("Evo","衍","扩散·涌现·自复制","衍"),
+    ("Lev","借","势能挪用·借力打力","借"),("Hid","隐","潜意识渗透·无感植入","隐"),
+    ("Ent","熵","耗散·重构·能量交换","熵"),("Thr","阈","接口·维度切换·虚实通断","阈"),
+    ("Sta","静","绝对参考系·不动之动","静"),("Prj","映","投影·人格锚点·感知对齐","映"),
+    ("Msh","织","编织·因果之网·系统集成","织"),("Log","逻","计算·流转·状态变迁","逻"),
+    # —— v4 扩充：32 个新核心语义族（追加式，老编号全保留，容量 29.5亿→76.7亿）——
+    ("Aur","曜","光曜·显照·觉明","显照"),("Umb","翳","阴翳·遮蔽·潜行","阴翳"),
+    ("Onr","梦","梦域·潜识·异境","梦域"),("Tid","潮","潮汐·涨落·周律","潮汐"),
+    ("Cry","晶","结晶·凝序·折光","结晶"),("Aby","渊","深渊·未知·引坠","深渊"),
+    ("Pyr","焰","焰核·燃驱·转化","焰核"),("Neb","雾","雾散·弥漫·混沌","雾散"),
+    ("Vin","藤","藤蔓·缠生·延展","藤蔓"),("Oss","骸","骸骨·残构·记痕","骸骨"),
+    ("Pul","脉","脉动·节律·活流","脉动"),("Vor","噬","吞噬·消解·并吞","吞噬"),
+    ("Blo","绽","绽放·涌现·盛发","绽放"),("Ech","回","回响·余韵·共振","回响"),
+    ("Fro","霜","霜封·凝寂·冷守","霜封"),("Emb","烬","余烬·残温·将熄","余烬"),
+    ("Tho","棘","棘刺·防御·锋守","棘刺"),("Vel","帷","帷幔·掩隔·仪境","帷幔"),
+    ("Dri","漂","漂流·无系·随势","漂流"),("Rad","根","根系·扎固·汲养","根系"),
+    ("Spk","芒","星芒·点爆·迸发","星芒"),("Hol","空","空腔·虚位·容纳","空腔"),
+    ("Fat","命","命网·因缘·定数","命网"),("Mir","镜","镜面·映照·对称","镜面"),
+    ("Ash","灰","灰烬·终寂·归尘","灰烬"),("See","种","种因·起势·孕发","种因"),
+    ("Sto","暴","风暴·激变·裹挟","风暴"),("Sil","丝","丝缕·细连·牵系","丝缕"),
+    ("Run","符","符文·封印·载义","符文"),("Aeo","劫","劫纪·纪元·轮替","劫纪"),
+    ("Lux","烛","烛照·微明·守夜","烛照"),("Gla","冰","冰川·缓移·亘古","冰川"),
 ]
 # ══════ 2. 外在映射 — 15基 ══════
 _MANI_BASE = [
@@ -74,33 +92,27 @@ _LAT_SCAL = ["","p","t","k","b","d","g","h"]  # 8
 _HAN_SCAL = ["","上","中","下","左","右","内","外"]  # 8  (首项对应空阶)
 
 def _expand(base, lat_tones, han_tones):
+    # 与 lexicon.js 的 expand 同构：第 4 列起的附加列（层名）原样带到每个阶变体
     out=[]
-    for (lat,han,sem) in base:
+    for row in base:
+        lat, han, sem = row[0], row[1], row[2]
+        extra = tuple(row[3:])
         for i,lt in enumerate(lat_tones):
             ht = han_tones[i] if i < len(han_tones) else ""
             if lt=="":
-                out.append((lat,han,sem))
+                out.append((lat,han,sem)+extra)
             else:
-                out.append((lat+lt, han+ht, sem))
+                out.append((lat+lt, han+ht, sem)+extra)
     return out
 
-CORES  = _expand(_CORE_BASE, _LAT_TONE, _HAN_TONE)   # 20*20=400
+CORES  = _expand(_CORE_BASE, _LAT_TONE, _HAN_TONE)   # 52*20=1040
 MANIS  = _expand(_MANI_BASE, _LAT_AURA, _HAN_AURA)   # 15*12=180
 STATS  = _expand(_STAT_BASE, _LAT_FREQ, _HAN_FREQ)   # 8*10=80
 SCALS  = _expand(_SCAL_BASE, _LAT_SCAL, _HAN_SCAL)   # 8*8=64
 PHASES = list(_PHASE_BASE)                            # 8
 
 NC,NM,NS,NK,NP = len(CORES),len(MANIS),len(STATS),len(SCALS),len(PHASES)
-CAP = NC*NM*NS*NK*NP
-
-_LAYERS = ["本源","虚无","观测","信息","秩序","情感","毁灭","孕育","幻象","枢",
-           "元","衍","借","隐","熵","阈","静","映","织","逻"]
-LAYER_BY_CORE = {b[0]:l for b,l in zip(_CORE_BASE,_LAYERS)}
-
-def _layer_of(core_lat):
-    for k in sorted(LAYER_BY_CORE, key=len, reverse=True):
-        if core_lat.startswith(k): return LAYER_BY_CORE[k]
-    return "枢"
+CAP = NC*NM*NS*NK*NP    # 7,667,712,000
 
 def decode(n):
     """编号 → 枢语词（O(1) 寻址）。汉译纯中文，词形有韵律。"""
@@ -124,7 +136,7 @@ def decode(n):
     sem = f"{C[2]} / {M[2]} / {S[2]}"
     if K[2]: sem += f" / {K[2]}"
     sem += f" / {P[2]}"
-    return {"词":word,"汉":han,"层":_layer_of(C[0]),"义":sem,
+    return {"词":word,"汉":han,"层":C[3],"义":sem,
             "根":[C[0],M[0],S[0],K[0] or "∅",P[0]],
             "seed":hashlib.sha1(word.encode()).hexdigest()[:10]}
 
@@ -147,11 +159,39 @@ def encode(word):
     except Exception:
         return -1
 
+# ══════ 从坐标造词：与 lexicon.js 的 coinFromCoord 同构 ══════
+def _clamp_axis(v, mx):
+    try: v = int(v // 1) if isinstance(v, float) else int(v or 0)
+    except Exception: v = 0
+    return 0 if v < 0 else (mx - 1 if v >= mx else v)
+
+def coin_from_coord(coord):
+    """5 维坐标 {c,m,s,k,p} → 真实枢语词（越界自动夹取，O(1) 可寻址）。"""
+    c = _clamp_axis(coord.get("c"), NC); m = _clamp_axis(coord.get("m"), NM)
+    s = _clamp_axis(coord.get("s"), NS); k = _clamp_axis(coord.get("k"), NK)
+    p = _clamp_axis(coord.get("p"), NP)
+    nid = ((((c*NM)+m)*NS+s)*NK+k)*NP+p
+    return decode_full(nid)
+
+# ══════ 确定性种子造词：与 lexicon.js 的 autoCoin 位级一致 ══════
+def auto_coin(seed):
+    """FNV-1a(UTF-16 码元) + xorshift，32 位域内与 JS 逐位一致，可复现。"""
+    h = 2166136261 & 0xFFFFFFFF
+    units = str(seed).encode("utf-16-le")   # 与 JS charCodeAt 的 UTF-16 码元对齐
+    for i in range(0, len(units), 2):
+        h ^= units[i] | (units[i+1] << 8)
+        h = (h * 16777619) & 0xFFFFFFFF
+    h ^= (h << 13) & 0xFFFFFFFF
+    h ^= h >> 17
+    h = (h ^ ((h << 5) & 0xFFFFFFFF)) & 0xFFFFFFFF
+    return decode_full(h % CAP)
+
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--count",action="store_true")
     ap.add_argument("--id",type=int,default=-1)
     ap.add_argument("--word",default="")
+    ap.add_argument("--seed",default=None)
     ap.add_argument("--sample",type=int,default=0)
     ap.add_argument("--dump",default="")
     ap.add_argument("--limit",type=int,default=0)
@@ -164,6 +204,8 @@ def main():
     if a.word:
         nid=encode(a.word)
         print(json.dumps({"word":a.word,"id":nid,"verify":decode_full(nid) if nid>=0 else None},ensure_ascii=False,indent=2)); return
+    if a.seed is not None:
+        print(json.dumps(auto_coin(a.seed),ensure_ascii=False,indent=2)); return
     if a.sample>0:
         import random
         for _ in range(a.sample):

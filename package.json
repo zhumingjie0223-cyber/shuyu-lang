@@ -1,0 +1,13 @@
+{
+  "name": "shuyu-lang",
+  "version": "4.0.0",
+  "private": true,
+  "type": "module",
+  "description": "枢语 Shuyu — 5维乘法语义空间语言引擎（76.7亿可寻址词，双实现同构权威源头）",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "test:py": "python3 -m unittest discover -s tests -v",
+    "check-sync": "node tools/check-sync.mjs"
+  },
+  "license": "SEE LICENSE IN README.md"
+}
