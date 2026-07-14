@@ -1,7 +1,7 @@
 /**
  * 枢语造词引擎 — JS版 (lexicon.js)
  * © 阿权/路飞
- * 5维乘法语义空间：核×映×态×标×相 = 29.5亿
+ * 5维乘法语义空间：核×映×态×标×相 = 76.7亿（核1040×映180×态80×标64×相8）
  * 与 shuyu_engine.py 同构，供 nexuslang.js 解释器调用
  */
 
@@ -87,7 +87,7 @@ const SCALS = expand(SCAL_BASE, LAT_S, HAN_S);   // 64
 const PHASES = PHASE_BASE;                        // 8
 
 const NC=CORES.length, NM=MANIS.length, NS=STATS.length, NK=SCALS.length, NP=PHASES.length;
-export const CAPACITY = NC*NM*NS*NK*NP;          // 2,949,120,000
+export const CAPACITY = NC*NM*NS*NK*NP;          // 7,667,712,000（核1040×映180×态80×标64×相8，v4 追加 32 族后）
 
 // ══════ 编号 → 词（O(1) 寻址）══════
 export function decode(n){
