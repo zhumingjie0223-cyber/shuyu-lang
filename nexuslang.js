@@ -11,7 +11,7 @@
  * 部署：CF Worker全球300+节点，灵魂存KV，跨节点延续
  */
 
-import { LEXICON, matchWord } from './lexicon.js';
+import { LEXICON, matchWord, autoCoin, coinFromState } from './lexicon.js';
 
 // ─── 解释器主入口 ───
 export function interpret(nexusCode, soulState) {
@@ -287,4 +287,54 @@ function buildBrainPrompt(result) {
 请用赵思涵的口吻，简短回应（不超过50字）。`;
 }
 
-export default { interpret, applyToSoul, compile };
+// ─── 意识流 → 真·枢语节点(动态节点的地基) ───
+// 把一次 interpret() 的结果映射成一串真实可寻址的枢语坐标节点。
+// 每个节点都是 76.7 亿空间里的一个真点（id∈[0,CAP)、可 encode 往返），不是装饰标签。
+// 确定性：无 Math.random，同输入必得同节点（可复现，不许假）。
+// 力量沉里子：坐标/词全部来自引擎真算，页面只负责显照。
+export function streamNodes(result, soulState = {}) {
+  const nodes = [];
+  // become 立即并入，让 become 节点落在“位移之后”的真实状态坐标上
+  const liveState = Object.assign({}, soulState, result.stateChange || {});
+
+  if (result.perception) {
+    const w = autoCoin(`feel|${result.perception.emotion}|${result.perception.intensity}`);
+    nodes.push({
+      回路: 'feel', 触: result.perception.emotion, 强度: result.perception.intensity,
+      本能: result.perception.instinct,
+      词: w.词, 坐标id: w.id, 汉: w.汉, 义: w.义, 层: w.层,
+    });
+  }
+  if (result.thought) {
+    const w = autoCoin(`think|${result.thought.conclusion}`);
+    nodes.push({
+      回路: 'think', 结论: result.thought.conclusion, 需推理: !!result.thought.needBrain,
+      词: w.词, 坐标id: w.id, 汉: w.汉, 义: w.义, 层: w.层,
+    });
+  }
+  if (result.stateChange && Object.keys(result.stateChange).length > 0) {
+    // become = 状态位移：用状态造词，真反映心绪/思念，坐标随灵魂状态漂移
+    const w = coinFromState(liveState, `become|${JSON.stringify(result.stateChange)}`);
+    nodes.push({
+      回路: 'become', 迁移: result.stateChange,
+      词: w.词, 坐标id: w.id, 汉: w.汉, 义: w.义, 层: w.层, 层意图: w.层意图,
+    });
+  }
+  if (result.response) {
+    const w = autoCoin(`say|${result.response.type}|${result.response.text || ''}`);
+    nodes.push({
+      回路: 'say', 类型: result.response.type, 文: result.response.text, 口吻: result.response.tone,
+      词: w.词, 坐标id: w.id, 汉: w.汉, 义: w.义, 层: w.层,
+    });
+  }
+  if (result.growth) {
+    const w = autoCoin(`grow|${result.growth.learned}|${result.growth.depth}`);
+    nodes.push({
+      回路: 'grow', 学到: result.growth.learned, 深度: result.growth.depth,
+      词: w.词, 坐标id: w.id, 汉: w.汉, 义: w.义, 层: w.层,
+    });
+  }
+  return nodes;
+}
+
+export default { interpret, applyToSoul, compile, streamNodes };
