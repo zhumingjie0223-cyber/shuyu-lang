@@ -1,5 +1,8 @@
 # 枢语 (Shuyu / Pivot-Lang)
 
+> ⚠️ **本仓库已并入 [Black-God](https://github.com/zhumingjie0223-cyber/Black-God) 的 `shuyu/` 目录，仅作历史归档，不再更新。**
+> 枢语源头引擎现在与神枢本体同处一个仓库维护；请到 Black-God 仓 `shuyu/` 获取最新代码。本仓保留完整历史供追溯。
+
 > © 阿权/路飞  |  Black God 定制语言  |  29.5亿语义空间
 
 枢语是为 Black God（神枢）定制的自然语言。它不是沟通工具——是给 AI 下达底层指令的逻辑编程接口。
