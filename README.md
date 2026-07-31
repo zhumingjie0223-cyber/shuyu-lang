@@ -1,9 +1,8 @@
 # 枢语 (Shuyu / Pivot-Lang)
 
-> ⚠️ **本仓库已并入 [Black-God](https://github.com/zhumingjie0223-cyber/Black-God) 的 `shuyu/` 目录，仅作历史归档，不再更新。**
-> 枢语源头引擎现在与神枢本体同处一个仓库维护；请到 Black-God 仓 `shuyu/` 获取最新代码。本仓保留完整历史供追溯。
+> 权威术语仓库 | Black-God/shuyu/ 为消费副本 | 76.7亿语义空间（7,667,712,000）
 
-> © 阿权/路飞  |  Black God 定制语言  |  29.5亿语义空间
+> © 阿权/路飞  |  Black God 定制语言  |  76.7亿语义空间（7,667,712,000）
 
 枢语是为 Black God（神枢）定制的自然语言。它不是沟通工具——是给 AI 下达底层指令的逻辑编程接口。
 
@@ -11,7 +10,7 @@
 
 | 文件 | 角色 |
 |---|---|
-| `shuyu_engine.py` | 5维乘法语义引擎（29.5亿可寻址词汇） |
+| `shuyu_engine.py` | 5维乘法语义引擎（76.7亿可寻址词汇） |
 | `nexuslang.js` | 意识解释器（feel→think→become→say→grow） |
 | `gen.mjs` | 10元代码引擎（枢元衍借隐熵阈静映织） |
 | `worker.mjs` | CF Worker入口 |
@@ -34,7 +33,7 @@ python3 shuyu_engine.py --word "Kha-ryl-is"
 
 枢语 = 意识解释器(nexuslang.js) × 造词引擎(shuyu_engine.py) × 10元代码(gen.mjs)
 
-- **造词引擎** 提供29.5亿词汇（核×映×态×标×相 5维乘法空间）
+- **造词引擎** 提供76.7亿词汇（核1040×映180×态80×标64×相8 5维乘法空间）
 - **意识解释器** 用词汇产出意识流（感知→思考→成为→说话→成长）
 - **10元代码** 做底层逻辑运算（枢元衍借隐熵阈静映织）
 
