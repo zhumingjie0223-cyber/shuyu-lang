@@ -31,6 +31,10 @@ const JSON_HEADERS = {
   'access-control-allow-headers': 'content-type',
 };
 
+const MAX_TALK_CHARS = 8_000;
+const MAX_TALK_LINES = 200;
+const MODEL_TIMEOUT_MS = 8_000;
+
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: JSON_HEADERS });
 }
@@ -52,6 +56,68 @@ async function loadSoul(env) {
 async function saveSoul(env, soul) {
   if (!env.SOUL) return;
   await env.SOUL.put('SOUL', JSON.stringify(soul));
+}
+
+function countLines(text) {
+  if (!text) return 0;
+  return text.split('\n').length;
+}
+
+async function applyResultAndSaveSoul(env, result) {
+  const latest = await loadSoul(env);
+  const next = applyToSoul(result, latest);
+  const rev = Number.isInteger(latest._rev) ? latest._rev : 0;
+  next._rev = rev + 1;
+  await saveSoul(env, next);
+  return next;
+}
+
+async function callAnthropic(prompt, maxTokens, env) {
+  const payload = {
+    model: env.ANTHROPIC_MODEL || 'claude-3-5-haiku-latest',
+    max_tokens: Number.isInteger(maxTokens) ? maxTokens : 200,
+    messages: [{ role: 'user', content: prompt }],
+  };
+  const req = fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': env.ANTHROPIC_KEY,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify(payload),
+  });
+  const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('模型请求超时')), MODEL_TIMEOUT_MS));
+  const res = await Promise.race([req, timeout]);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`模型请求失败(${res.status}): ${text.slice(0, 200)}`);
+  }
+  const data = await res.json();
+  const text = Array.isArray(data?.content)
+    ? data.content.filter(c => c?.type === 'text' && typeof c?.text === 'string').map(c => c.text).join('\n').trim()
+    : '';
+  return {
+    ok: true,
+    model: data?.model || payload.model,
+    text,
+    usage: {
+      input_tokens: data?.usage?.input_tokens ?? null,
+      output_tokens: data?.usage?.output_tokens ?? null,
+    },
+  };
+}
+
+async function maybeCallBrain(compiled, env) {
+  if (!compiled?.brainCall) return { enabled: false, skipped: true, reason: 'no_brain_call' };
+  if (env.MODEL_ENABLED !== '1') return { enabled: false, skipped: true, reason: 'model_disabled' };
+  if (!env.ANTHROPIC_KEY) return { enabled: false, skipped: true, reason: 'missing_anthropic_key' };
+  try {
+    const out = await callAnthropic(compiled.brainCall.prompt, compiled.brainCall.maxTokens, env);
+    return { enabled: true, skipped: false, ...out };
+  } catch (err) {
+    return { enabled: true, skipped: false, ok: false, error: String(err?.message ?? err) };
+  }
 }
 
 async function handleDecode(url) {
@@ -97,11 +163,18 @@ async function handleTalk(req, env) {
   if (typeof code !== 'string' || !code.trim()) {
     return badRequest('缺少字段 code（枢语意识流文本）');
   }
-  const soul = await loadSoul(env);
-  const result = interpret(code, soul);
-  applyToSoul(result, soul);
-  await saveSoul(env, soul);
-  return json({ result, compiled: compile(result), soul });
+  if (code.length > MAX_TALK_CHARS) {
+    return badRequest(`code 过长，最多 ${MAX_TALK_CHARS} 字符`);
+  }
+  if (countLines(code) > MAX_TALK_LINES) {
+    return badRequest(`code 行数过多，最多 ${MAX_TALK_LINES} 行`);
+  }
+  const soulBefore = await loadSoul(env);
+  const result = interpret(code, soulBefore);
+  const compiled = compile(result);
+  const model = await maybeCallBrain(compiled, env);
+  const soul = await applyResultAndSaveSoul(env, result);
+  return json({ result, compiled, model, soul });
 }
 
 async function handleBroadcast(env) {
@@ -114,6 +187,7 @@ async function handleStatus(env) {
   const soul = await loadSoul(env);
   return json({
     version: VERSION,
+    packageVersion: '4.0.0',
     copyright: COPYRIGHT,
     capacity: CAPACITY,
     soul,

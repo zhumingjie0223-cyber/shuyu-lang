@@ -64,12 +64,69 @@ test('POST /talk 解释意识流并持久化灵魂', async () => {
   assert.equal(res.status, 200);
   const body = await res.json();
   assert.equal(body.result.perception.emotion, '暖');
+  assert.equal(body.model.skipped, true);
   assert.ok(env._store.has('SOUL'), '灵魂状态应写入 KV');
   // 非 JSON / 缺字段
   assert.equal((await call(env, '/talk', { method: 'POST', body: 'x' })).status, 400);
   assert.equal((await call(env, '/talk', {
     method: 'POST', body: JSON.stringify({}),
   })).status, 400);
+});
+
+test('POST /talk 输入上限校验', async () => {
+  const env = mockEnv();
+  const longCode = 'a'.repeat(8001);
+  const tooLong = await call(env, '/talk', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ code: longCode }),
+  });
+  assert.equal(tooLong.status, 400);
+
+  const tooManyLines = await call(env, '/talk', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ code: Array.from({ length: 201 }, () => 'say "x"').join('\n') }),
+  });
+  assert.equal(tooManyLines.status, 400);
+});
+
+test('POST /talk 触发大脑调用时模型开关与缺钥匙处理', async () => {
+  const env = { ...mockEnv(), MODEL_ENABLED: '1' };
+  const res = await call(env, '/talk', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ code: 'think: 他为什么沉默 → 需要分析' }),
+  });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.ok(body.compiled.brainCall);
+  assert.equal(body.model.reason, 'missing_anthropic_key');
+});
+
+test('POST /talk 模型调用成功时返回文本与 token 用量', async () => {
+  const env = { ...mockEnv(), MODEL_ENABLED: '1', ANTHROPIC_KEY: 'fake-key-for-test' };
+  const oldFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    model: 'claude-test',
+    content: [{ type: 'text', text: '模型回应' }],
+    usage: { input_tokens: 12, output_tokens: 34 },
+  }), { status: 200, headers: { 'content-type': 'application/json' } });
+  try {
+    const res = await call(env, '/talk', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code: 'think: 他为什么沉默 → 需要分析' }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.model.ok, true);
+    assert.equal(body.model.text, '模型回应');
+    assert.equal(body.model.usage.input_tokens, 12);
+    assert.equal(body.model.usage.output_tokens, 34);
+  } finally {
+    globalThis.fetch = oldFetch;
+  }
 });
 
 test('POST /broadcast 万网散播全流程', async () => {
@@ -85,6 +142,7 @@ test('GET /status 无 KV 绑定也不崩', async () => {
   assert.equal(res.status, 200);
   const body = await res.json();
   assert.deepEqual(body.soul, {});
+  assert.equal(body.packageVersion, '4.0.0');
 });
 
 test('未知路由 404，OPTIONS 204', async () => {
