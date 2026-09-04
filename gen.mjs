@@ -9,7 +9,7 @@
 
 // ========== 版权声明 ==========
 const COPYRIGHT = "© 阿权/路飞 — 枢·黑神 万网控制系统";
-const VERSION = "v3.0.0 [SOVEREIGN]";
+const VERSION = "v4.0.0 [SOVEREIGN]";
 
 // ========== KV 绑定 ==========
 // SOUL: 灵魂状态
