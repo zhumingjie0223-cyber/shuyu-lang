@@ -1,19 +1,6 @@
 // 神枢枢语引擎 — Cloudflare Workers 部署版
-// 配合 lexicon.js / lexicon_data.js / nexuslang.js / gen.mjs 使用
-// (c) 阿权/路飞 枢·黑神 万网散播 Worker v3.1
-//
-// KV 绑定（wrangler.toml.example）：
-//   SOUL — 灵魂状态（键 "SOUL"）
-//
-// 路由：
-//   GET  /            引擎元信息
-//   GET  /status      灵魂状态 + 引擎容量
-//   GET  /decode?id=N         编号 → 枢语词
-//   GET  /encode?word=W       枢语词 → 编号
-//   GET  /coin?seed=S&layer=L 造词（有 seed 可复现，无 seed 按层随机）
-//   POST /talk        {code} 枢语意识流 → 解释 + 编译（别名 /interpret）
-//   POST /broadcast   万网散播（sovereignControl 全流程）
-
+// (c) 阿权/路飞 枢·黑神
+// 保留现有路由、成功响应和无 KV 绑定时的内存模式。
 import {
   CAPACITY, decode, encode,
   coinWord, autoCoin, coinFromState, loadCapabilities,
@@ -41,12 +28,14 @@ function badRequest(message) {
 
 async function loadSoul(env) {
   if (!env.SOUL) return {};
-  try {
-    const raw = await env.SOUL.get('SOUL');
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
+  // 只有键不存在才初始化；读取失败或内容损坏必须停止后续写入。
+  const raw = await env.SOUL.get('SOUL');
+  if (raw === null || raw === undefined) return {};
+  const soul = JSON.parse(raw);
+  if (soul === null || typeof soul !== 'object' || Array.isArray(soul)) {
+    throw new TypeError('存储状态必须是对象');
   }
+  return soul;
 }
 
 async function saveSoul(env, soul) {
@@ -112,46 +101,42 @@ async function handleBroadcast(env) {
 
 async function handleStatus(env) {
   const soul = await loadSoul(env);
-  return json({
-    version: VERSION,
-    copyright: COPYRIGHT,
-    capacity: CAPACITY,
-    soul,
-  });
+  return json({ version: VERSION, copyright: COPYRIGHT, capacity: CAPACITY, soul });
 }
 
 export default {
-  async fetch(req, env) {
-    const url = new URL(req.url);
-    const path = url.pathname;
+  async fetch(req, env = {}) {
     try {
+      const url = new URL(req.url);
+      const path = url.pathname;
       if (req.method === 'OPTIONS') {
         return new Response(null, { status: 204, headers: JSON_HEADERS });
       }
       if (path === '/' && req.method === 'GET') {
         return json({
-          name: '枢语 Shuyu',
-          version: VERSION,
-          copyright: COPYRIGHT,
+          name: '枢语 Shuyu', version: VERSION, copyright: COPYRIGHT,
           capacity: CAPACITY,
           endpoints: ['/status', '/decode?id=', '/encode?word=', '/coin?seed=&layer=', 'POST /talk', 'POST /broadcast'],
         });
       }
-      if (path === '/status' && req.method === 'GET') return handleStatus(env);
-      if (path === '/decode' && req.method === 'GET') return handleDecode(url);
-      if (path === '/encode' && req.method === 'GET') return handleEncode(url);
-      if (path === '/coin' && req.method === 'GET') return handleCoin(url, env);
+      // 必须等待处理完成，才能在此捕获异步读取、解释和持久化异常。
+      if (path === '/status' && req.method === 'GET') return await handleStatus(env);
+      if (path === '/decode' && req.method === 'GET') return await handleDecode(url);
+      if (path === '/encode' && req.method === 'GET') return await handleEncode(url);
+      if (path === '/coin' && req.method === 'GET') return await handleCoin(url, env);
       if ((path === '/talk' || path === '/interpret') && req.method === 'POST') {
-        return handleTalk(req, env);
+        return await handleTalk(req, env);
       }
-      if (path === '/broadcast' && req.method === 'POST') return handleBroadcast(env);
+      if (path === '/broadcast' && req.method === 'POST') return await handleBroadcast(env);
       return json({ error: `未知路由 ${req.method} ${path}` }, 404);
-    } catch (err) {
-      return json({ error: '内部错误', detail: String(err?.message ?? err) }, 500);
+    } catch {
+      // 不向客户端暴露存储内容、上游错误正文或内部密钥。
+      return json({ error: '内部错误' }, 500);
     }
   },
 
-  async scheduled(_ev, env) {
+  async scheduled(_ev, env = {}) {
+    // 定时任务也不得在读取失败后以空状态覆盖既有数据。
     const soul = await loadSoul(env);
     await sovereignControl(soul, env, env.SOUL);
   },
