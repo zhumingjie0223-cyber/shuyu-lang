@@ -13,6 +13,8 @@
 //   GET  /coin?seed=S&layer=L 造词（有 seed 可复现，无 seed 按层随机）
 //   POST /talk        {code} 枢语意识流 → 解释 + 编译（别名 /interpret）
 //   POST /broadcast   万网散播（sovereignControl 全流程）
+// 私有状态接口和无 seed/layer 的 /coin 要求 Authorization: Bearer <OWNER_TOKEN>。
+// 未设置 OWNER_TOKEN 时关闭这些 HTTP 接口；定时任务仍由 Workers 平台触发。
 
 import {
   CAPACITY, decode, encode,
@@ -28,7 +30,8 @@ const JSON_HEADERS = {
   'content-type': 'application/json; charset=utf-8',
   'access-control-allow-origin': '*',
   'access-control-allow-methods': 'GET, POST, OPTIONS',
-  'access-control-allow-headers': 'content-type',
+  'access-control-allow-headers': 'content-type, authorization',
+  'cache-control': 'no-store',
 };
 
 function json(data, status = 200) {
@@ -37,6 +40,29 @@ function json(data, status = 200) {
 
 function badRequest(message) {
   return json({ error: message }, 400);
+}
+
+function authorizeOwner(req, env) {
+  const expected = env.OWNER_TOKEN;
+  if (typeof expected !== 'string' || !expected.trim()) {
+    return json({ error: '私有接口尚未配置访问密钥' }, 503);
+  }
+  const match = /^Bearer ([^\s]+)$/i.exec(req.headers.get('authorization') ?? '');
+  if (!match || match[1] !== expected) {
+    return new Response(JSON.stringify({ error: '需要有效的所有者访问密钥' }), {
+      status: 401,
+      headers: { ...JSON_HEADERS, 'www-authenticate': 'Bearer realm="shuyu"' },
+    });
+  }
+  return null;
+}
+
+function readsPrivateState(url, method) {
+  if (method === 'POST' && ['/talk', '/interpret', '/broadcast'].includes(url.pathname)) return true;
+  if (method !== 'GET') return false;
+  if (url.pathname === '/status') return true;
+  // seed/layer 造词不读取 KV；其余 /coin 分支会读取私有状态，必须一起保护。
+  return url.pathname === '/coin' && !url.searchParams.get('seed') && !url.searchParams.get('layer');
 }
 
 async function loadSoul(env) {
@@ -121,12 +147,16 @@ async function handleStatus(env) {
 }
 
 export default {
-  async fetch(req, env) {
+  async fetch(req, env = {}) {
     const url = new URL(req.url);
     const path = url.pathname;
     try {
       if (req.method === 'OPTIONS') {
         return new Response(null, { status: 204, headers: JSON_HEADERS });
+      }
+      if (readsPrivateState(url, req.method)) {
+        const denied = authorizeOwner(req, env);
+        if (denied) return denied;
       }
       if (path === '/' && req.method === 'GET') {
         return json({

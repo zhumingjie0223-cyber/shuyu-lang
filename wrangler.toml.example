@@ -4,6 +4,7 @@
 #
 #   cp wrangler.toml.example wrangler.toml
 #   npx wrangler kv namespace create SOUL   # 把返回的 id 填到下面
+#   npx wrangler secret put OWNER_TOKEN    # 私有状态接口的所有者访问密钥
 #   npx wrangler deploy
 
 name = "shuyu"
@@ -20,5 +21,6 @@ id = "<你的 KV namespace id>"
 crons = ["0 * * * *"]
 
 # 机密用 wrangler secret 注入，不写进本文件：
+#   npx wrangler secret put OWNER_TOKEN
 #   npx wrangler secret put ANTHROPIC_KEY
 #   npx wrangler secret put TG_BOT_TOKEN

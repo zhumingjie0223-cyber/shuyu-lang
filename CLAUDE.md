@@ -15,23 +15,25 @@
 5维乘法语义空间语言引擎：核(1040) × 映(180) × 态(80) × 标(64) × 相(8) = **7,667,712,000** 个可寻址词。
 双实现同构：`shuyu_engine.py`（Python）↔ `lexicon.js`（JS），同一编号必须解出同一个词。
 
-**已并入 Black God（两仓合一）**：本目录 `shuyu/` 是枢语权威源头；同仓 `web/nexus-do/`
-内嵌一份消费副本，是消费方。改引擎在此处改，再同步到消费副本，跑 `node tools/check-sync.mjs`
-（不带参数即自动比对上一级 `web/nexus-do/`）。
+**当前版本关系（2026-09-08 核对）**：这里是独立的 `shuyu-lang` 仓库，包版本仍为 1.1.0；
+更新的 v4.1 引擎保留在 `Black-God/shuyu/`。下一次统一发布应从该新版基线逐项迁入，
+保留本仓 Worker 的 OWNER_TOKEN 鉴权，禁止用旧引擎覆盖新版。Black God 当前发布入口为原生 iOS，
+`web/nexus-do/` 已不在运行路径。版本差异和服务访问要求见 README.md。
 
 ## 铁律
 
 - 词根表只能在轴尾**追加**，绝不改动/删除/重排已有词根（否则历史编号全部错位）。
-- 改引擎必改双侧（Python + JS），并跑 `node tools/check-sync.mjs` 核对同仓 `web/nexus-do/` 消费副本。
+- 改引擎必改双侧（Python + JS）；跨仓核对时显式传入另一份引擎目录，并额外检查导出 API 与测试。
+- Worker 的私有状态路由默认拒绝；不得在缺少 OWNER_TOKEN 时开放读取或持久化状态。
 - 汉译纯中文；`decode→encode` 往返必须成立。
 
 ## 常用命令
 
 ```bash
-# 以下命令在本目录 shuyu/ 下执行
+# 以下命令在独立仓根目录执行
 npm test                                  # Node 测试（引擎/解释器/Worker/跨引擎一致性）
 python3 -m unittest discover -s tests -v  # Python 测试
-node tools/check-sync.mjs                 # 同仓同步校验（自动比对上一级 web/nexus-do/）
+node tools/check-sync.mjs ../Black-God/shuyu # 仅比对旧有编号与词表；不是完整 API 同步证明
 ```
 
 ## Sub-agent 模型路由（成本分级，自动遵守）
