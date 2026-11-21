@@ -2,7 +2,7 @@
 /**
  * 枢语 C ABI 桥接头文件 (shuyu_c_api.h)
  * © 阿权/路飞
- * 供 Swift (Black God Mac / OpenMinis)、Objective-C++、llama.cpp 直接静态链接调用，零外部运行时依赖。
+ * 供 Swift (Black God iOS/Mac)、Objective-C++、llama.cpp 直接静态链接调用，零外部运行时依赖。
  */
 
 #include <stdint.h>
@@ -26,8 +26,15 @@ char* shuyu_decode_json(uint64_t id);
 // 枢语词 → 编号（未命中返回 -1）
 int64_t shuyu_encode(const char* word);
 
+// 纯中文汉译 → 编号（未命中返回 -1）
+int64_t shuyu_encode_han(const char* han);
+
 // 确定性种子自主造词（返回 JSON 字符串，调用方需用 shuyu_free_string 释放）
 char* shuyu_auto_coin_json(const char* seed);
+
+// 全量统一调用入口（容量/解码/拉丁编号/汉译编号/检索/造词/组合/类比/邻近/一息..醒息/编译/规划/往返/质数）
+// 返回 {"ok":true,"value":...} 或 {"ok":false,"error":"..."}，调用方需用 shuyu_free_string 释放
+char* shuyu_invoke_json(const char* operation, const char* input);
 
 // 执行枢语意识脚本并更新运行态（返回 JSON 结果，调用方需用 shuyu_free_string 释放）
 char* shuyu_interpret_json(ShuyuRuntime* rt, const char* nexus_code);

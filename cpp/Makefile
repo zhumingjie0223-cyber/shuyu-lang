@@ -2,7 +2,7 @@ CXX      := clang++
 CXXFLAGS := -std=c++17 -O3 -Wall -Wextra -fPIC
 AR       := ar
 
-LIB_SRCS := shuyu_lexicon.cpp shuyu_interpreter.cpp shuyu_c_api.cpp
+LIB_SRCS := shuyu_lexicon.cpp shuyu_interpreter.cpp shuyu_ops.cpp shuyu_c_api.cpp
 LIB_OBJS := $(LIB_SRCS:.cpp=.o)
 
 .PHONY: all test clean

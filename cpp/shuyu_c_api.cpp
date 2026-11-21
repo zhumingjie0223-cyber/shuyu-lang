@@ -6,6 +6,7 @@
 #include "shuyu_c_api.h"
 #include "shuyu_interpreter.hpp"
 #include "shuyu_lexicon.hpp"
+#include "shuyu_ops.hpp"
 
 #include <cstdlib>
 #include <cstring>
@@ -75,10 +76,21 @@ int64_t shuyu_encode(const char* word) {
     return shuyu::LexiconEngine::instance().encode(word);
 }
 
+int64_t shuyu_encode_han(const char* han) {
+    if (!han) return -1;
+    return shuyu::LexiconEngine::instance().encodeHan(han);
+}
+
 char* shuyu_auto_coin_json(const char* seed) {
     std::string s = seed ? seed : "";
     auto entry = shuyu::LexiconEngine::instance().autoCoin(s);
     return dupString(wordToJson(entry));
+}
+
+char* shuyu_invoke_json(const char* operation, const char* input) {
+    std::string op = operation ? operation : "";
+    std::string in = input ? input : "";
+    return dupString(shuyu::invokeOperationJson(op, in));
 }
 
 char* shuyu_interpret_json(ShuyuRuntime* rt, const char* nexus_code) {

@@ -7,7 +7,9 @@
 #include "shuyu_lexicon.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <random>
+#include <stdexcept>
 
 namespace shuyu {
 
@@ -38,7 +40,6 @@ constexpr CoreBaseRow kCoreBase[] = {
     {"Ent","熵","耗散·重构·能量交换","熵"}, {"Thr","阈","接口·维度切换·虚实通断","阈"},
     {"Sta","静","绝对参考系·不动之动","静"}, {"Prj","映","投影·人格锚点·感知对齐","映"},
     {"Msh","织","编织·因果之网·系统集成","织"}, {"Log","逻","计算·流转·状态变迁","逻"},
-    // v4 扩充：32 个新核心语义族
     {"Aur","曜","光曜·显照·觉明","显照"}, {"Umb","翳","阴翳·遮蔽·潜行","阴翳"},
     {"Onr","梦","梦域·潜识·异境","梦域"}, {"Tid","潮","潮汐·涨落·周律","潮汐"},
     {"Cry","晶","结晶·凝序·折光","结晶"}, {"Aby","渊","深渊·未知·引坠","深渊"},
@@ -92,7 +93,57 @@ constexpr const char* kHanF[] = {"","一","二","三","四","五","六","七","�
 constexpr const char* kLatS[] = {"","p","t","k","b","d","g","h"};
 constexpr const char* kHanS[] = {"","上","中","下","左","右","内","外"};
 
-// 将 UTF-8 字符串按 UTF-16 code unit 遍历（与 JS charCodeAt 保持完全一致，确保 autoCoin 同构）
+std::string trimStr(const std::string& s) {
+    size_t b = 0;
+    while (b < s.size() && std::isspace(static_cast<unsigned char>(s[b]))) ++b;
+    size_t e = s.size();
+    while (e > b && std::isspace(static_cast<unsigned char>(s[e - 1]))) --e;
+    return s.substr(b, e - b);
+}
+
+std::string toLowerAscii(const std::string& s) {
+    std::string out = s;
+    for (char& c : out) {
+        if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+    }
+    return out;
+}
+
+bool isNonNegDigits(const std::string& s) {
+    if (s.empty()) return false;
+    if (s.size() > 1 && s[0] == '0') return false;
+    for (char c : s) {
+        if (c < '0' || c > '9') return false;
+    }
+    return true;
+}
+
+bool isAllDigits(const std::string& s) {
+    if (s.empty()) return false;
+    for (char c : s) {
+        if (c < '0' || c > '9') return false;
+    }
+    return true;
+}
+
+// 按 UTF-8 码点切分
+std::vector<std::string> splitUtf8Chars(const std::string& s) {
+    std::vector<std::string> out;
+    size_t i = 0;
+    while (i < s.size()) {
+        unsigned char c = static_cast<unsigned char>(s[i]);
+        size_t len = 1;
+        if (c < 0x80) len = 1;
+        else if ((c & 0xE0) == 0xC0) len = 2;
+        else if ((c & 0xF0) == 0xE0) len = 3;
+        else if ((c & 0xF8) == 0xF0) len = 4;
+        if (i + len > s.size()) len = s.size() - i;
+        out.push_back(s.substr(i, len));
+        i += len;
+    }
+    return out;
+}
+
 std::vector<uint16_t> utf8ToUtf16(const std::string& s) {
     std::vector<uint16_t> out;
     size_t i = 0;
@@ -137,7 +188,46 @@ uint64_t clampAxis(int64_t v, uint64_t maxVal) {
     return uv >= maxVal ? (maxVal - 1) : uv;
 }
 
+bool semContainsExactToken(const std::string& sem, const std::string& kw) {
+    const std::string sep = "·";
+    size_t start = 0;
+    while (start <= sem.size()) {
+        size_t pos = sem.find(sep, start);
+        std::string tok = (pos == std::string::npos) ? sem.substr(start) : sem.substr(start, pos - start);
+        if (tok == kw) return true;
+        if (pos == std::string::npos) break;
+        start = pos + sep.size();
+    }
+    return false;
+}
+
+int hitScore(const std::string& kw, const std::string& kwl,
+             const std::string& lat, const std::string& han, const std::string& sem) {
+    const std::string latl = toLowerAscii(lat);
+    if (!kwl.empty() && kwl == latl) return 400;
+    if (!han.empty() && han == kw) return 380;
+    if (!sem.empty() && semContainsExactToken(sem, kw)) return 300;
+    if (!han.empty() && han.rfind(kw, 0) == 0) return 240;
+    if (!han.empty() && han.find(kw) != std::string::npos) return 200;
+    if (!sem.empty() && sem.find(kw) != std::string::npos) return 160;
+    if (!latl.empty() && kwl.size() >= 2 && latl.find(kwl) != std::string::npos) return 100;
+    return 0;
+}
+
 } // namespace
+
+const std::array<std::string, 5>& LexiconEngine::axisNames() {
+    static const std::array<std::string, 5> names = {"核", "映", "态", "标", "相"};
+    return names;
+}
+
+int LexiconEngine::axisIndex(const std::string& name) {
+    const auto& names = axisNames();
+    for (int i = 0; i < 5; ++i) {
+        if (names[i] == name) return i;
+    }
+    return -1;
+}
 
 const LexiconEngine& LexiconEngine::instance() {
     static const LexiconEngine engine;
@@ -153,7 +243,9 @@ LexiconEngine::LexiconEngine() {
             item.han = std::string(row.han) + kHanT[i];
             item.sem = row.sem;
             item.layer = row.layer;
-            coreIndex_.emplace(item.lat, static_cast<uint64_t>(cores_.size()));
+            uint64_t idx = static_cast<uint64_t>(cores_.size());
+            latIndex_[0][item.lat] = idx;
+            hanIndex_[0][item.han] = idx;
             cores_.push_back(std::move(item));
         }
     }
@@ -165,7 +257,9 @@ LexiconEngine::LexiconEngine() {
             item.lat = std::string(row.lat) + kLatA[i];
             item.han = std::string(row.han) + kHanA[i];
             item.sem = row.sem;
-            maniIndex_.emplace(item.lat, static_cast<uint64_t>(manis_.size()));
+            uint64_t idx = static_cast<uint64_t>(manis_.size());
+            latIndex_[1][item.lat] = idx;
+            hanIndex_[1][item.han] = idx;
             manis_.push_back(std::move(item));
         }
     }
@@ -177,7 +271,9 @@ LexiconEngine::LexiconEngine() {
             item.lat = std::string(row.lat) + kLatF[i];
             item.han = std::string(row.han) + kHanF[i];
             item.sem = row.sem;
-            statIndex_.emplace(item.lat, static_cast<uint64_t>(stats_.size()));
+            uint64_t idx = static_cast<uint64_t>(stats_.size());
+            latIndex_[2][item.lat] = idx;
+            hanIndex_[2][item.han] = idx;
             stats_.push_back(std::move(item));
         }
     }
@@ -189,7 +285,9 @@ LexiconEngine::LexiconEngine() {
             item.lat = std::string(row.lat) + kLatS[i];
             item.han = std::string(row.han) + kHanS[i];
             item.sem = row.sem;
-            scalIndex_.emplace(item.lat, static_cast<uint64_t>(scals_.size()));
+            uint64_t idx = static_cast<uint64_t>(scals_.size());
+            latIndex_[3][item.lat] = idx;
+            hanIndex_[3][item.han] = idx;
             scals_.push_back(std::move(item));
         }
     }
@@ -197,7 +295,9 @@ LexiconEngine::LexiconEngine() {
     phases_.reserve(NP);
     for (const auto& row : kPhaseBase) {
         AxisItem item{row.lat, row.han, row.sem};
-        phaseIndex_.emplace(item.lat, static_cast<uint64_t>(phases_.size()));
+        uint64_t idx = static_cast<uint64_t>(phases_.size());
+        latIndex_[4][item.lat] = idx;
+        hanIndex_[4][item.han] = idx;
         phases_.push_back(std::move(item));
     }
 
@@ -241,12 +341,16 @@ std::optional<WordEntry> LexiconEngine::decode(uint64_t n) const {
     if (!K.sem.empty()) out.sem += " / " + K.sem;
     out.sem += " / " + P.sem;
 
+    out.roots = {C.lat, M.lat, S.lat, K.lat.empty() ? "∅" : K.lat, P.lat};
+    out.coord = {static_cast<int64_t>(c), static_cast<int64_t>(m),
+                 static_cast<int64_t>(s), static_cast<int64_t>(k),
+                 static_cast<int64_t>(p)};
     return out;
 }
 
 int64_t LexiconEngine::encode(const std::string& word) const {
     const std::string dot = "·";
-    const size_t dotPos = word.find(dot);
+    const size_t dotPos = word.rfind(dot);
     if (dotPos == std::string::npos) return -1;
 
     const std::string head = word.substr(0, dotPos);
@@ -265,24 +369,200 @@ int64_t LexiconEngine::encode(const std::string& word) const {
     }
     if (parts.size() < 3 || parts.size() > 4) return -1;
 
-    auto ci = coreIndex_.find(parts[0]);
-    auto mi = maniIndex_.find(parts[1]);
-    auto si = statIndex_.find(parts[2]);
-    auto pi = phaseIndex_.find(ph);
-    if (ci == coreIndex_.end() || mi == maniIndex_.end() ||
-        si == statIndex_.end() || pi == phaseIndex_.end()) {
+    auto ci = latIndex_[0].find(parts[0]);
+    auto mi = latIndex_[1].find(parts[1]);
+    auto si = latIndex_[2].find(parts[2]);
+    auto pi = latIndex_[4].find(ph);
+    if (ci == latIndex_[0].end() || mi == latIndex_[1].end() ||
+        si == latIndex_[2].end() || pi == latIndex_[4].end()) {
         return -1;
     }
 
     uint64_t kiVal = 0;
     if (parts.size() == 4) {
-        auto ki = scalIndex_.find(parts[3]);
-        if (ki == scalIndex_.end()) return -1;
+        auto ki = latIndex_[3].find(parts[3]);
+        if (ki == latIndex_[3].end() || ki->second == 0) return -1;
         kiVal = ki->second;
     }
 
-    const uint64_t id = ((((ci->second * NM) + mi->second) * NS + si->second) * NK + kiVal) * NP + pi->second;
-    return static_cast<int64_t>(id);
+    return static_cast<int64_t>(idOf(ci->second, mi->second, si->second, kiVal, pi->second));
+}
+
+int64_t LexiconEngine::encodeHan(const std::string& han) const {
+    const auto chars = splitUtf8Chars(han);
+    if (chars.size() < 4) return -1;
+    auto piIt = hanIndex_[4].find(chars.back());
+    if (piIt == hanIndex_[4].end()) return -1;
+    const uint64_t pi = piIt->second;
+
+    const size_t L = chars.size() - 1;
+    auto seg = [&](size_t a, size_t b) {
+        std::string r;
+        for (size_t i = a; i < b; ++i) r += chars[i];
+        return r;
+    };
+
+    int64_t found = -1;
+    int count = 0;
+    for (size_t lc : {size_t(1), size_t(2)}) {
+        if (lc > L) continue;
+        auto ciIt = hanIndex_[0].find(seg(0, lc));
+        if (ciIt == hanIndex_[0].end()) continue;
+        for (size_t lm : {size_t(1), size_t(2)}) {
+            if (lc + lm > L) continue;
+            auto miIt = hanIndex_[1].find(seg(lc, lc + lm));
+            if (miIt == hanIndex_[1].end()) continue;
+            for (size_t ls : {size_t(1), size_t(2)}) {
+                if (lc + lm + ls > L) continue;
+                auto siIt = hanIndex_[2].find(seg(lc + lm, lc + lm + ls));
+                if (siIt == hanIndex_[2].end()) continue;
+                auto kiIt = hanIndex_[3].find(seg(lc + lm + ls, L));
+                if (kiIt == hanIndex_[3].end()) continue;
+                if (++count > 1) return -1;
+                found = static_cast<int64_t>(idOf(ciIt->second, miIt->second, siIt->second, kiIt->second, pi));
+            }
+        }
+    }
+    return count == 1 ? found : -1;
+}
+
+std::vector<SearchHit> LexiconEngine::search(const std::string& keyword, const std::string& axis) const {
+    const std::string kw = trimStr(keyword);
+    if (kw.empty()) return {};
+    const std::string kwl = toLowerAscii(kw);
+    const auto& names = axisNames();
+
+    struct ScoredHit {
+        int score;
+        int axisIdx;
+        SearchHit hit;
+    };
+    std::vector<ScoredHit> scored;
+
+    auto scanAxis = [&](int ai, size_t count, uint64_t toneLen, auto getRow) {
+        if (!axis.empty() && axis != names[ai]) return;
+        for (size_t bi = 0; bi < count; ++bi) {
+            auto [lat, han, sem] = getRow(bi);
+            if (lat.empty() && han.empty()) continue;
+            int sc = hitScore(kw, kwl, lat, han, sem);
+            if (sc > 0) {
+                scored.push_back({sc, ai, SearchHit{names[ai], static_cast<uint64_t>(bi) * toneLen, lat, han, sem}});
+            }
+        }
+    };
+
+    scanAxis(0, sizeof(kCoreBase) / sizeof(kCoreBase[0]), 20, [](size_t i) {
+        return std::tuple<std::string, std::string, std::string>{kCoreBase[i].lat, kCoreBase[i].han, kCoreBase[i].sem};
+    });
+    scanAxis(1, sizeof(kManiBase) / sizeof(kManiBase[0]), 12, [](size_t i) {
+        return std::tuple<std::string, std::string, std::string>{kManiBase[i].lat, kManiBase[i].han, kManiBase[i].sem};
+    });
+    scanAxis(2, sizeof(kStatBase) / sizeof(kStatBase[0]), 10, [](size_t i) {
+        return std::tuple<std::string, std::string, std::string>{kStatBase[i].lat, kStatBase[i].han, kStatBase[i].sem};
+    });
+    scanAxis(3, sizeof(kScalBase) / sizeof(kScalBase[0]), 8, [](size_t i) {
+        return std::tuple<std::string, std::string, std::string>{kScalBase[i].lat, kScalBase[i].han, kScalBase[i].sem};
+    });
+    scanAxis(4, sizeof(kPhaseBase) / sizeof(kPhaseBase[0]), 1, [](size_t i) {
+        return std::tuple<std::string, std::string, std::string>{kPhaseBase[i].lat, kPhaseBase[i].han, kPhaseBase[i].sem};
+    });
+
+    std::sort(scored.begin(), scored.end(), [](const ScoredHit& a, const ScoredHit& b) {
+        if (a.score != b.score) return a.score > b.score;
+        if (a.axisIdx != b.axisIdx) return a.axisIdx < b.axisIdx;
+        return a.hit.index < b.hit.index;
+    });
+
+    std::vector<SearchHit> out;
+    out.reserve(scored.size());
+    for (auto& s : scored) out.push_back(std::move(s.hit));
+    return out;
+}
+
+uint64_t LexiconEngine::resolveAxisInt(int ai, int64_t val) const {
+    const auto sizes = axisSizes();
+    const auto& names = axisNames();
+    if (val < 0 || static_cast<uint64_t>(val) >= sizes[ai]) {
+        throw std::runtime_error(names[ai] + "轴下标越界 0.." + std::to_string(sizes[ai] - 1) + ": " + std::to_string(val));
+    }
+    return static_cast<uint64_t>(val);
+}
+
+uint64_t LexiconEngine::resolveAxis(int ai, const std::string& val) const {
+    const std::string v = trimStr(val);
+    if (v.empty()) return 0;
+    if (isAllDigits(v)) {
+        try {
+            return resolveAxisInt(ai, std::stoll(v));
+        } catch (...) {
+            throw std::runtime_error(axisNames()[ai] + "轴下标越界: " + val);
+        }
+    }
+    auto li = latIndex_[ai].find(v);
+    if (li != latIndex_[ai].end()) return li->second;
+    auto hi = hanIndex_[ai].find(v);
+    if (hi != hanIndex_[ai].end()) return hi->second;
+    auto hits = search(v, axisNames()[ai]);
+    if (!hits.empty()) return hits[0].index;
+    throw std::runtime_error(axisNames()[ai] + "轴找不到「" + val + "」");
+}
+
+WordEntry LexiconEngine::resolveWord(const std::string& input) const {
+    const std::string s = trimStr(input);
+    if (s.empty()) throw std::runtime_error("类比词必须是编号或枢语词");
+    if (isNonNegDigits(s)) {
+        uint64_t id = 0;
+        try {
+            id = std::stoull(s);
+        } catch (...) {
+            throw std::runtime_error("编号越界");
+        }
+        auto d = decode(id);
+        if (!d) throw std::runtime_error("编号越界 0.." + std::to_string(CAPACITY - 1));
+        return *d;
+    }
+    int64_t id = encode(s);
+    if (id < 0) id = encodeHan(s);
+    if (id < 0) throw std::runtime_error("类比找不到「" + input + "」");
+    return *decode(static_cast<uint64_t>(id));
+}
+
+WordEntry LexiconEngine::analogy(const std::string& a, const std::string& b, const std::string& c) const {
+    const WordEntry A = resolveWord(a);
+    const WordEntry B = resolveWord(b);
+    const WordEntry C = resolveWord(c);
+    const auto sizes = axisSizes();
+    const std::array<int64_t, 5> av = {A.coord.c, A.coord.m, A.coord.s, A.coord.k, A.coord.p};
+    const std::array<int64_t, 5> bv = {B.coord.c, B.coord.m, B.coord.s, B.coord.k, B.coord.p};
+    const std::array<int64_t, 5> cv = {C.coord.c, C.coord.m, C.coord.s, C.coord.k, C.coord.p};
+    std::array<uint64_t, 5> idx{};
+    for (int i = 0; i < 5; ++i) {
+        int64_t sz = static_cast<int64_t>(sizes[i]);
+        int64_t v = ((cv[i] + bv[i] - av[i]) % sz + sz) % sz;
+        idx[i] = static_cast<uint64_t>(v);
+    }
+    return *decode(idOf(idx[0], idx[1], idx[2], idx[3], idx[4]));
+}
+
+std::vector<NearHit> LexiconEngine::near(const std::string& input, int limit) const {
+    int n = std::min(16, std::max(1, limit));
+    const WordEntry word = resolveWord(input);
+    const auto sizes = axisSizes();
+    const auto& names = axisNames();
+    const std::array<int64_t, 5> origin = {word.coord.c, word.coord.m, word.coord.s, word.coord.k, word.coord.p};
+    std::vector<NearHit> out;
+    for (int i = 0; i < 5; ++i) {
+        for (int delta : {-1, 1}) {
+            int64_t next = origin[i] + delta;
+            if (next < 0 || next >= static_cast<int64_t>(sizes[i])) continue;
+            auto idx = origin;
+            idx[i] = next;
+            auto w = *decode(idOf(idx[0], idx[1], idx[2], idx[3], idx[4]));
+            out.push_back({1, names[i], std::move(w)});
+        }
+    }
+    if (static_cast<int>(out.size()) > n) out.resize(n);
+    return out;
 }
 
 std::optional<FeelEntry> LexiconEngine::matchFeel(const std::string& text) const {
@@ -301,8 +581,7 @@ WordEntry LexiconEngine::coinFromCoord(const Coord5D& coord) const {
     const uint64_t s = clampAxis(coord.s, NS);
     const uint64_t k = clampAxis(coord.k, NK);
     const uint64_t p = clampAxis(coord.p, NP);
-    const uint64_t id = ((((c * NM) + m) * NS + s) * NK + k) * NP + p;
-    return *decode(id);
+    return *decode(idOf(c, m, s, k, p));
 }
 
 WordEntry LexiconEngine::autoCoin(const std::string& seed) const {
