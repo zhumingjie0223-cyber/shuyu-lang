@@ -1,6 +1,19 @@
 __pycache__/
-*.pyc
+*.py[cod]
 *.jsonl
 lexicon_full.json
 .env*
+!.env.example
 wrangler.toml
+
+# Generated build and test artifacts
+build/
+dist/
+DerivedData/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.log
+*.tmp
+.DS_Store
