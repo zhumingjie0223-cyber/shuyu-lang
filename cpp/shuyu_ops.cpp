@@ -735,6 +735,115 @@ const std::map<std::string, CmdSpec>& taskMapping() {
     return m;
 }
 
+// 提取并校验 $s1..$s8 槽位引用（只能引用当前步之前已定义的槽位）
+std::vector<std::string> extractAndValidateSlotRefs(const std::string& s, size_t currentStepIndex, size_t lineNum) {
+    std::vector<std::string> refs;
+    for (size_t i = 0; i + 2 < s.size(); ++i) {
+        if (s[i] == '$' && s[i + 1] == 's' && std::isdigit(static_cast<unsigned char>(s[i + 2]))) {
+            size_t j = i + 2;
+            while (j < s.size() && std::isdigit(static_cast<unsigned char>(s[j]))) ++j;
+            std::string numStr = s.substr(i + 2, j - (i + 2));
+            int slotNum = 0;
+            try { slotNum = std::stoi(numStr); } catch (...) { slotNum = 0; }
+            if (slotNum < 1 || slotNum > static_cast<int>(kTaskMaxActions)) {
+                throw std::runtime_error("第" + std::to_string(lineNum) + "行槽位引用越界 $s" + numStr);
+            }
+            if (static_cast<size_t>(slotNum) > currentStepIndex) {
+                throw std::runtime_error("第" + std::to_string(lineNum) + "行引用了尚未执行的槽位 $s" + numStr);
+            }
+            std::string slotId = "s" + std::to_string(slotNum);
+            if (std::find(refs.begin(), refs.end(), slotId) == refs.end()) {
+                refs.push_back(std::move(slotId));
+            }
+            i = j - 1;
+        }
+    }
+    return refs;
+}
+
+struct BranchCondition {
+    std::string slot;   // "s1".."s8"
+    std::string op;     // "eq" | "neq" | "contains" | "ok" | "fail"
+    std::string value;
+    bool negate = false;
+};
+
+BranchCondition parseBranchCondition(const std::string& exprRaw, size_t executedCount, size_t lineNum) {
+    std::string expr = trimStr(exprRaw);
+    // 去掉末尾冒号
+    if (expr.size() >= 3 && expr.compare(expr.size() - 3, 3, "：") == 0) {
+        expr = trimStr(expr.substr(0, expr.size() - 3));
+    } else if (!expr.empty() && expr.back() == ':') {
+        expr = trimStr(expr.substr(0, expr.size() - 1));
+    }
+    if (expr.size() < 3 || expr[0] != '$' || expr[1] != 's' || !std::isdigit(static_cast<unsigned char>(expr[2]))) {
+        throw std::runtime_error("第" + std::to_string(lineNum) + "行条件分支必须以 $s1..$s8 槽位开头");
+    }
+    size_t j = 2;
+    while (j < expr.size() && std::isdigit(static_cast<unsigned char>(expr[j]))) ++j;
+    int slotNum = 0;
+    try { slotNum = std::stoi(expr.substr(2, j - 2)); } catch (...) { slotNum = 0; }
+    if (slotNum < 1 || slotNum > static_cast<int>(kTaskMaxActions) || static_cast<size_t>(slotNum) > executedCount) {
+        throw std::runtime_error("第" + std::to_string(lineNum) + "行条件引用了无效或未执行的槽位 $s" + expr.substr(2, j - 2));
+    }
+
+    BranchCondition cond;
+    cond.slot = "s" + std::to_string(slotNum);
+    std::string rest = trimStr(expr.substr(j));
+
+    if (rest == "成功" || rest == "ok") {
+        cond.op = "ok";
+        return cond;
+    }
+    if (rest == "失败" || rest == "fail") {
+        cond.op = "fail";
+        return cond;
+    }
+
+    auto parseQuotedVal = [&](const std::string& rhs) -> std::string {
+        JsonVal v;
+        try { v = parseJson(trimStr(rhs)); }
+        catch (...) { throw std::runtime_error("第" + std::to_string(lineNum) + "行条件比较值必须为JSON字符串"); }
+        if (v.type != JsonVal::Type::String || v.sVal.size() > 4096) {
+            throw std::runtime_error("第" + std::to_string(lineNum) + "行条件比较值必须为有限长度字符串");
+        }
+        return v.sVal;
+    };
+
+    if (rest.rfind("==", 0) == 0) {
+        cond.op = "eq";
+        cond.value = parseQuotedVal(rest.substr(2));
+        return cond;
+    }
+    if (rest.rfind("!=", 0) == 0) {
+        cond.op = "neq";
+        cond.value = parseQuotedVal(rest.substr(2));
+        return cond;
+    }
+    if (rest.rfind("含", 0) == 0) {
+        cond.op = "contains";
+        cond.value = parseQuotedVal(rest.substr(std::string("含").size()));
+        return cond;
+    }
+    if (rest.rfind("contains", 0) == 0 && (rest.size() == 8 || std::isspace(static_cast<unsigned char>(rest[8])))) {
+        cond.op = "contains";
+        cond.value = parseQuotedVal(rest.substr(8));
+        return cond;
+    }
+    throw std::runtime_error("第" + std::to_string(lineNum) + "行不支持的条件运算符");
+}
+
+JsonVal conditionToJson(const BranchCondition& c) {
+    JsonVal o = JsonVal::makeObject();
+    o.oVal["slot"] = JsonVal::makeString(c.slot);
+    o.oVal["op"] = JsonVal::makeString(c.op);
+    if (!c.value.empty() || c.op == "eq" || c.op == "neq" || c.op == "contains") {
+        o.oVal["value"] = JsonVal::makeString(c.value);
+    }
+    o.oVal["negate"] = JsonVal::makeBool(c.negate);
+    return o;
+}
+
 JsonVal compileTask(const std::string& source) {
     if (source.size() > 8192) throw std::runtime_error("枢语程序为空或超过8192字符");
     std::vector<std::string> lines;
@@ -744,30 +853,67 @@ JsonVal compileTask(const std::string& source) {
         std::string t = trimStr(rawLine);
         if (!t.empty() && t.rfind("--", 0) != 0) lines.push_back(std::move(t));
     }
-    if (lines.empty() || lines.size() > kTaskMaxActions) {
+    if (lines.empty()) {
         throw std::runtime_error("每个枢语程序需要1至8条执行语句");
     }
 
     const auto& mp = taskMapping();
     JsonVal actions = JsonVal::makeArray();
 
-    for (size_t idx = 0; idx < lines.size(); ++idx) {
-        const std::string& line = lines[idx];
+    bool inBranch = false;
+    bool inElse = false;
+    BranchCondition activeCond;
+
+    for (size_t lineIdx = 0; lineIdx < lines.size(); ++lineIdx) {
+        const std::string& line = lines[lineIdx];
+        const size_t lineNum = lineIdx + 1;
+
+        // 1) 块结束：终 / 结束 / endif
+        if (line == "终" || line == "结束" || line == "endif") {
+            if (!inBranch) throw std::runtime_error("第" + std::to_string(lineNum) + "行出现孤立的结束标记");
+            inBranch = false;
+            inElse = false;
+            continue;
+        }
+
+        // 2) 否则分支：否则： / 否则: / else:
+        if (line == "否则：" || line == "否则:" || line == "否则" || line == "else:" || line == "else") {
+            if (!inBranch || inElse) throw std::runtime_error("第" + std::to_string(lineNum) + "行「否则」缺少配对的「若」");
+            inElse = true;
+            activeCond.negate = true;
+            continue;
+        }
+
+        // 3) 若条件头：若 <expr>： / if <expr>:
+        if (line.rfind("若 ", 0) == 0 || line.rfind("若$", 0) == 0 || line.rfind("if ", 0) == 0) {
+            if (inBranch) throw std::runtime_error("第" + std::to_string(lineNum) + "行不支持嵌套「若」分支，请先以「终」结束");
+            std::string body = (line.rfind("若", 0) == 0) ? line.substr(std::string("若").size()) : line.substr(2);
+            activeCond = parseBranchCondition(body, actions.aVal.size(), lineNum);
+            inBranch = true;
+            inElse = false;
+            continue;
+        }
+
+        // 4) 普通执行语句（保持 1..8 条总执行语句安全边界）
+        if (actions.aVal.size() >= kTaskMaxActions) {
+            throw std::runtime_error("每个枢语程序需要1至8条执行语句");
+        }
+
         std::string rest;
         if (line.rfind("行：", 0) == 0) rest = line.substr(std::string("行：").size());
         else if (line.rfind("行:", 0) == 0) rest = line.substr(std::string("行:").size());
         else if (line.rfind("do:", 0) == 0) rest = line.substr(3);
-        else throw std::runtime_error("第" + std::to_string(idx + 1) + "行不是已支持的执行语句");
+        else throw std::runtime_error("第" + std::to_string(lineNum) + "行不是已支持的执行语句");
 
         rest = trimStr(rest);
         size_t openParen = rest.find('(');
         if (openParen == std::string::npos || openParen == 0) {
-            throw std::runtime_error("第" + std::to_string(idx + 1) + "行不是已支持的执行语句");
+            throw std::runtime_error("第" + std::to_string(lineNum) + "行不是已支持的执行语句");
         }
         std::string cmd = rest.substr(0, openParen);
         auto it = mp.find(cmd);
         if (it == mp.end()) {
-            throw std::runtime_error("第" + std::to_string(idx + 1) + "行不是已支持的执行语句");
+            throw std::runtime_error("第" + std::to_string(lineNum) + "行不是已支持的执行语句");
         }
 
         bool quoted = false, escaped = false;
@@ -780,22 +926,30 @@ JsonVal compileTask(const std::string& source) {
             if (!quoted && c == ')') { closeParen = i; break; }
         }
         if (closeParen == std::string::npos || quoted) {
-            throw std::runtime_error("第" + std::to_string(idx + 1) + "行括号或字符串未闭合");
+            throw std::runtime_error("第" + std::to_string(lineNum) + "行括号或字符串未闭合");
         }
 
         JsonVal args;
         try {
             args = parseJson("[" + rest.substr(openParen + 1, closeParen - openParen - 1) + "]");
         } catch (...) {
-            throw std::runtime_error("第" + std::to_string(idx + 1) + "行参数必须为JSON字符串");
+            throw std::runtime_error("第" + std::to_string(lineNum) + "行参数必须为JSON字符串");
         }
         const CmdSpec& spec = it->second;
         if (args.type != JsonVal::Type::Array || args.aVal.size() != spec.keys.size()) {
-            throw std::runtime_error("第" + std::to_string(idx + 1) + "行参数数量或类型错误");
+            throw std::runtime_error("第" + std::to_string(lineNum) + "行参数数量或类型错误");
         }
+
+        std::vector<std::string> allRefs;
         for (const auto& a : args.aVal) {
             if (a.type != JsonVal::Type::String || trimStr(a.sVal).empty() || a.sVal.size() > 4096) {
-                throw std::runtime_error("第" + std::to_string(idx + 1) + "行参数数量或类型错误");
+                throw std::runtime_error("第" + std::to_string(lineNum) + "行参数数量或类型错误");
+            }
+            auto r = extractAndValidateSlotRefs(a.sVal, actions.aVal.size(), lineNum);
+            for (const auto& sid : r) {
+                if (std::find(allRefs.begin(), allRefs.end(), sid) == allRefs.end()) {
+                    allRefs.push_back(sid);
+                }
             }
         }
 
@@ -804,7 +958,7 @@ JsonVal compileTask(const std::string& source) {
         if (!suffix.empty()) {
             const std::string arrow = "→";
             if (suffix.rfind(arrow, 0) != 0) {
-                throw std::runtime_error("第" + std::to_string(idx + 1) + "行末尾无效");
+                throw std::runtime_error("第" + std::to_string(lineNum) + "行末尾无效");
             }
             std::string expStr = trimStr(suffix.substr(arrow.size()));
             try {
@@ -825,11 +979,23 @@ JsonVal compileTask(const std::string& source) {
         if (spec.tool == "shell_execute") params.oVal["timeout"] = JsonVal::makeString("10");
 
         JsonVal act = JsonVal::makeObject();
-        act.oVal["id"] = JsonVal::makeString("s" + std::to_string(idx + 1));
+        act.oVal["id"] = JsonVal::makeString("s" + std::to_string(actions.aVal.size() + 1));
         act.oVal["tool"] = JsonVal::makeString(spec.tool);
         act.oVal["arguments"] = std::move(params);
         act.oVal["expected"] = std::move(expected);
+        if (!allRefs.empty()) {
+            JsonVal refsArr = JsonVal::makeArray();
+            for (const auto& sid : allRefs) refsArr.aVal.push_back(JsonVal::makeString(sid));
+            act.oVal["refs"] = std::move(refsArr);
+        }
+        if (inBranch) {
+            act.oVal["when"] = conditionToJson(activeCond);
+        }
         actions.aVal.push_back(std::move(act));
+    }
+
+    if (actions.aVal.empty() || actions.aVal.size() > kTaskMaxActions) {
+        throw std::runtime_error("每个枢语程序需要1至8条执行语句");
     }
 
     JsonVal prog = JsonVal::makeObject();

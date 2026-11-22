@@ -1,6 +1,7 @@
 /**
  * 枢语 C ABI 桥接实现 (shuyu_c_api.cpp)
  * © 阿权/路飞
+ * 使用 std::shared_mutex 保护 ShuyuRuntime 并发读写安全。
  */
 
 #include "shuyu_c_api.h"
@@ -10,9 +11,13 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <mutex>
+#include <shared_mutex>
 #include <sstream>
+#include <string_view>
 
 struct ShuyuRuntime {
+    mutable std::shared_mutex mtx;
     shuyu::SoulState soul;
 };
 
@@ -61,6 +66,24 @@ void shuyu_runtime_destroy(ShuyuRuntime* rt) {
     delete rt;
 }
 
+int shuyu_runtime_save(const ShuyuRuntime* rt, const char* filepath) {
+    if (!rt || !filepath) return -1;
+    std::shared_lock<std::shared_mutex> lock(rt->mtx);
+    return shuyu::saveSoulState(rt->soul, filepath);
+}
+
+int shuyu_runtime_load(ShuyuRuntime* rt, const char* filepath) {
+    if (!rt || !filepath) return -1;
+    std::unique_lock<std::shared_mutex> lock(rt->mtx);
+    return shuyu::loadSoulState(rt->soul, filepath);
+}
+
+char* shuyu_runtime_state_json(const ShuyuRuntime* rt) {
+    if (!rt) return dupString("{\"error\":\"invalid_args\"}");
+    std::shared_lock<std::shared_mutex> lock(rt->mtx);
+    return dupString(shuyu::soulStateToJson(rt->soul));
+}
+
 uint64_t shuyu_capacity(void) {
     return shuyu::LexiconEngine::CAPACITY;
 }
@@ -73,12 +96,12 @@ char* shuyu_decode_json(uint64_t id) {
 
 int64_t shuyu_encode(const char* word) {
     if (!word) return -1;
-    return shuyu::LexiconEngine::instance().encode(word);
+    return shuyu::LexiconEngine::instance().encode(std::string_view(word));
 }
 
 int64_t shuyu_encode_han(const char* han) {
     if (!han) return -1;
-    return shuyu::LexiconEngine::instance().encodeHan(han);
+    return shuyu::LexiconEngine::instance().encodeHan(std::string_view(han));
 }
 
 char* shuyu_auto_coin_json(const char* seed) {
@@ -95,6 +118,7 @@ char* shuyu_invoke_json(const char* operation, const char* input) {
 
 char* shuyu_interpret_json(ShuyuRuntime* rt, const char* nexus_code) {
     if (!rt || !nexus_code) return dupString("{\"error\":\"invalid_args\"}");
+    std::unique_lock<std::shared_mutex> lock(rt->mtx);
     auto res = shuyu::interpret(nexus_code, rt->soul);
     shuyu::applyToSoul(res, rt->soul);
     return dupString(shuyu::resultToJson(res, rt->soul));
@@ -102,6 +126,7 @@ char* shuyu_interpret_json(ShuyuRuntime* rt, const char* nexus_code) {
 
 void shuyu_sovereign_pulse(ShuyuRuntime* rt, const char* signal) {
     if (!rt) return;
+    std::unique_lock<std::shared_mutex> lock(rt->mtx);
     shuyu::sovereignPulse(rt->soul, signal ? signal : "sovereign_pulse");
 }
 

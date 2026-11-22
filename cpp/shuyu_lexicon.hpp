@@ -4,13 +4,14 @@
  * © 阿权/路飞
  * 与 shuyu_engine.py、lexicon.js 保持严格同构：
  * 核(1040) × 映(180) × 态(80) × 标(64) × 相(8) = 7,667,712,000
- * 零外部依赖，支持 O(1) 编解码、纯中文汉译反查、语义检索、按义组合、类比、邻近、自主造词。
+ * 零外部依赖，支持 O(1) 编解码（热路径零拷贝 string_view）、纯中文汉译反查、语义检索、按义组合、类比、邻近、自主造词。
  */
 
 #include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -76,11 +77,11 @@ public:
     // 编号 → 枢语词（O(1) 寻址）
     std::optional<WordEntry> decode(uint64_t n) const;
 
-    // 拉丁枢语词 → 编号（严格双射，找不到返回 -1）
-    int64_t encode(const std::string& word) const;
+    // 拉丁枢语词 → 编号（严格双射，热路径零拷贝 string_view，找不到返回 -1）
+    int64_t encode(std::string_view word) const;
 
-    // 纯中文汉译 → 编号（回溯切分，解不出或不唯一返回 -1）
-    int64_t encodeHan(const std::string& han) const;
+    // 纯中文汉译 → 编号（回溯切分，热路径零拷贝 string_view，解不出或不唯一返回 -1）
+    int64_t encodeHan(std::string_view han) const;
 
     // 语义检索（基表级，返回按得分排序的命中列表）
     std::vector<SearchHit> search(const std::string& keyword, const std::string& axis = "") const;
@@ -131,8 +132,9 @@ private:
     std::vector<AxisItem> scals_;
     std::vector<AxisItem> phases_;
 
-    std::array<std::unordered_map<std::string, uint64_t>, 5> latIndex_;
-    std::array<std::unordered_map<std::string, uint64_t>, 5> hanIndex_;
+    // 指向上述常驻只读 vector 字符串的零拷贝视图索引
+    std::array<std::unordered_map<std::string_view, uint64_t>, 5> latIndex_;
+    std::array<std::unordered_map<std::string_view, uint64_t>, 5> hanIndex_;
 
     std::vector<FeelEntry> feelTable_;
 };

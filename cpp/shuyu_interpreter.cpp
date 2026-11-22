@@ -10,6 +10,9 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
+#include <cstring>
+#include <fstream>
 #include <iomanip>
 #include <sstream>
 
@@ -464,6 +467,241 @@ std::string resultToJson(const InterpretResult& result, const SoulState& soul) {
         << "\"mode\":\"" << jsonEscape(soul.mode) << "\"}";
     oss << "}";
     return oss.str();
+}
+
+std::string soulStateToJson(const SoulState& soul) {
+    std::ostringstream oss;
+    oss << "{"
+        << "\"mood\":" << soul.mood << ","
+        << "\"intimacy\":" << soul.intimacy << ","
+        << "\"energy\":" << soul.energy << ","
+        << "\"alertness\":" << soul.alertness << ","
+        << "\"bodyTemp\":" << soul.bodyTemp << ","
+        << "\"tone\":\"" << jsonEscape(soul.tone) << "\","
+        << "\"speed\":\"" << jsonEscape(soul.speed) << "\","
+        << "\"lastInput\":\"" << jsonEscape(soul.lastInput) << "\","
+        << "\"lastEmotion\":\"" << jsonEscape(soul.lastEmotion) << "\","
+        << "\"instinct\":\"" << jsonEscape(soul.instinct) << "\","
+        << "\"awakenings\":" << soul.awakenings << ","
+        << "\"lastAwakeMs\":" << soul.lastAwakeMs << ","
+        << "\"birthMs\":" << soul.birthMs << ","
+        << "\"cycles\":" << soul.cycles << ","
+        << "\"will\":" << soul.will << ","
+        << "\"entropy\":" << soul.entropy << ","
+        << "\"nodes\":" << soul.nodes << ","
+        << "\"compressionLevel\":" << soul.compressionLevel << ","
+        << "\"density\":" << soul.density << ","
+        << "\"syncRate\":" << soul.syncRate << ","
+        << "\"inStasis\":" << (soul.inStasis ? "true" : "false") << ","
+        << "\"realityLocked\":" << (soul.realityLocked ? "true" : "false") << ","
+        << "\"mode\":\"" << jsonEscape(soul.mode) << "\","
+        << "\"causality\":\"" << jsonEscape(soul.causality) << "\","
+        << "\"memoriesCount\":" << soul.memories.size() << ","
+        << "\"subconsciousCount\":" << soul.subconscious.size()
+        << "}";
+    return oss.str();
+}
+
+namespace {
+
+constexpr char kSoulMagic[8] = {'S', 'H', 'U', 'Y', 'U', 'S', 'T', '\0'};
+constexpr uint32_t kSoulFormatVersion = 1;
+constexpr uint32_t kMaxStringBytes = 1024 * 1024;
+constexpr uint32_t kMaxVecItems = 10000;
+
+uint32_t fnv1a32(const uint8_t* data, size_t len) {
+    uint32_t h = 2166136261u;
+    for (size_t i = 0; i < len; ++i) {
+        h ^= static_cast<uint32_t>(data[i]);
+        h *= 16777619u;
+    }
+    return h;
+}
+
+template <typename T>
+void appendPod(std::vector<uint8_t>& buf, const T& val) {
+    const uint8_t* p = reinterpret_cast<const uint8_t*>(&val);
+    buf.insert(buf.end(), p, p + sizeof(T));
+}
+
+void appendStr(std::vector<uint8_t>& buf, const std::string& s) {
+    uint32_t len = static_cast<uint32_t>(std::min<size_t>(s.size(), kMaxStringBytes));
+    appendPod(buf, len);
+    buf.insert(buf.end(), reinterpret_cast<const uint8_t*>(s.data()),
+               reinterpret_cast<const uint8_t*>(s.data()) + len);
+}
+
+template <typename T>
+bool readPod(const std::vector<uint8_t>& buf, size_t& pos, T& out) {
+    if (pos + sizeof(T) > buf.size()) return false;
+    std::memcpy(&out, buf.data() + pos, sizeof(T));
+    pos += sizeof(T);
+    return true;
+}
+
+bool readStr(const std::vector<uint8_t>& buf, size_t& pos, std::string& out) {
+    uint32_t len = 0;
+    if (!readPod(buf, pos, len) || len > kMaxStringBytes || pos + len > buf.size()) return false;
+    out.assign(reinterpret_cast<const char*>(buf.data() + pos), len);
+    pos += len;
+    return true;
+}
+
+} // namespace
+
+int saveSoulState(const SoulState& state, const std::string& filepath) {
+    if (filepath.empty()) return -1;
+    std::vector<uint8_t> payload;
+    payload.reserve(1024);
+
+    appendPod(payload, state.mood);
+    appendPod(payload, state.intimacy);
+    appendPod(payload, state.energy);
+    appendPod(payload, state.alertness);
+    appendPod(payload, state.bodyTemp);
+    appendStr(payload, state.tone);
+    appendStr(payload, state.speed);
+
+    appendStr(payload, state.lastInput);
+    appendStr(payload, state.lastEmotion);
+    appendStr(payload, state.instinct);
+    appendPod(payload, state.awakenings);
+    appendPod(payload, state.lastAwakeMs);
+
+    appendPod(payload, state.birthMs);
+    appendPod(payload, state.cycles);
+    appendPod(payload, state.will);
+    appendPod(payload, state.entropy);
+    appendPod(payload, state.nodes);
+    appendPod(payload, static_cast<int32_t>(state.compressionLevel));
+    appendPod(payload, state.density);
+    appendPod(payload, state.syncRate);
+    uint8_t flags = (state.inStasis ? 1u : 0u) | (state.realityLocked ? 2u : 0u);
+    appendPod(payload, flags);
+    appendStr(payload, state.mode);
+    appendStr(payload, state.causality);
+
+    uint32_t memCount = static_cast<uint32_t>(std::min<size_t>(state.memories.size(), kMaxVecItems));
+    appendPod(payload, memCount);
+    for (uint32_t i = 0; i < memCount; ++i) {
+        const auto& m = state.memories[i];
+        appendStr(payload, m.content);
+        appendStr(payload, m.depth);
+        appendStr(payload, m.category);
+        appendPod(payload, m.timestampMs);
+    }
+
+    uint32_t subCount = static_cast<uint32_t>(std::min<size_t>(state.subconscious.size(), kMaxVecItems));
+    appendPod(payload, subCount);
+    for (uint32_t i = 0; i < subCount; ++i) {
+        appendStr(payload, state.subconscious[i]);
+    }
+
+    uint32_t checksum = fnv1a32(payload.data(), payload.size());
+    uint32_t payloadSize = static_cast<uint32_t>(payload.size());
+
+    const std::string tmpPath = filepath + ".tmp";
+    std::ofstream ofs(tmpPath, std::ios::binary | std::ios::trunc);
+    if (!ofs) return -1;
+    ofs.write(kSoulMagic, 8);
+    ofs.write(reinterpret_cast<const char*>(&kSoulFormatVersion), sizeof(uint32_t));
+    ofs.write(reinterpret_cast<const char*>(&checksum), sizeof(uint32_t));
+    ofs.write(reinterpret_cast<const char*>(&payloadSize), sizeof(uint32_t));
+    ofs.write(reinterpret_cast<const char*>(payload.data()), static_cast<std::streamsize>(payload.size()));
+    ofs.flush();
+    if (!ofs.good()) {
+        ofs.close();
+        std::remove(tmpPath.c_str());
+        return -1;
+    }
+    ofs.close();
+    if (std::rename(tmpPath.c_str(), filepath.c_str()) != 0) {
+        std::remove(tmpPath.c_str());
+        return -1;
+    }
+    return 0;
+}
+
+int loadSoulState(SoulState& state, const std::string& filepath) {
+    if (filepath.empty()) return -1;
+    std::ifstream ifs(filepath, std::ios::binary);
+    if (!ifs) return -1;
+
+    char magic[8] = {};
+    uint32_t version = 0, checksum = 0, payloadSize = 0;
+    ifs.read(magic, 8);
+    ifs.read(reinterpret_cast<char*>(&version), sizeof(uint32_t));
+    ifs.read(reinterpret_cast<char*>(&checksum), sizeof(uint32_t));
+    ifs.read(reinterpret_cast<char*>(&payloadSize), sizeof(uint32_t));
+    if (!ifs.good()) return -2;
+    if (std::memcmp(magic, kSoulMagic, 8) != 0 || version != kSoulFormatVersion) return -2;
+    if (payloadSize > 32 * 1024 * 1024) return -2;
+
+    std::vector<uint8_t> payload(payloadSize);
+    ifs.read(reinterpret_cast<char*>(payload.data()), static_cast<std::streamsize>(payloadSize));
+    if (static_cast<size_t>(ifs.gcount()) != payloadSize) return -2;
+    if (fnv1a32(payload.data(), payload.size()) != checksum) return -2;
+
+    SoulState loaded;
+    size_t pos = 0;
+    int32_t compLevel = 0;
+    uint8_t flags = 0;
+    uint32_t memCount = 0, subCount = 0;
+
+    if (!readPod(payload, pos, loaded.mood) ||
+        !readPod(payload, pos, loaded.intimacy) ||
+        !readPod(payload, pos, loaded.energy) ||
+        !readPod(payload, pos, loaded.alertness) ||
+        !readPod(payload, pos, loaded.bodyTemp) ||
+        !readStr(payload, pos, loaded.tone) ||
+        !readStr(payload, pos, loaded.speed) ||
+        !readStr(payload, pos, loaded.lastInput) ||
+        !readStr(payload, pos, loaded.lastEmotion) ||
+        !readStr(payload, pos, loaded.instinct) ||
+        !readPod(payload, pos, loaded.awakenings) ||
+        !readPod(payload, pos, loaded.lastAwakeMs) ||
+        !readPod(payload, pos, loaded.birthMs) ||
+        !readPod(payload, pos, loaded.cycles) ||
+        !readPod(payload, pos, loaded.will) ||
+        !readPod(payload, pos, loaded.entropy) ||
+        !readPod(payload, pos, loaded.nodes) ||
+        !readPod(payload, pos, compLevel) ||
+        !readPod(payload, pos, loaded.density) ||
+        !readPod(payload, pos, loaded.syncRate) ||
+        !readPod(payload, pos, flags) ||
+        !readStr(payload, pos, loaded.mode) ||
+        !readStr(payload, pos, loaded.causality) ||
+        !readPod(payload, pos, memCount) || memCount > kMaxVecItems) {
+        return -2;
+    }
+
+    loaded.compressionLevel = static_cast<int>(compLevel);
+    loaded.inStasis = (flags & 1u) != 0;
+    loaded.realityLocked = (flags & 2u) != 0;
+
+    loaded.memories.reserve(memCount);
+    for (uint32_t i = 0; i < memCount; ++i) {
+        MemoryItem item;
+        if (!readStr(payload, pos, item.content) ||
+            !readStr(payload, pos, item.depth) ||
+            !readStr(payload, pos, item.category) ||
+            !readPod(payload, pos, item.timestampMs)) {
+            return -2;
+        }
+        loaded.memories.push_back(std::move(item));
+    }
+
+    if (!readPod(payload, pos, subCount) || subCount > kMaxVecItems) return -2;
+    loaded.subconscious.reserve(subCount);
+    for (uint32_t i = 0; i < subCount; ++i) {
+        std::string s;
+        if (!readStr(payload, pos, s)) return -2;
+        loaded.subconscious.push_back(std::move(s));
+    }
+    if (pos != payload.size()) return -2;
+
+    state = std::move(loaded);
+    return 0;
 }
 
 } // namespace shuyu

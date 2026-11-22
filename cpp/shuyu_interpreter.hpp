@@ -142,4 +142,12 @@ HungerResult hungerProtocol(const std::string& input);
 // 将 InterpretResult 序列化为标准 JSON（供 CLI、Swift 与 llama-server 直接消费）
 std::string resultToJson(const InterpretResult& result, const SoulState& soul);
 
+// 将完整 SoulState 序列化为 JSON 快照
+std::string soulStateToJson(const SoulState& soul);
+
+// ─── SoulState 二进制原子持久化（带魔数、版本头与 FNV-1a 校验和）───
+// 返回 0 成功；-1 IO/参数失败；-2 魔数/版本/校验和损坏
+int saveSoulState(const SoulState& state, const std::string& filepath);
+int loadSoulState(SoulState& state, const std::string& filepath);
+
 } // namespace shuyu

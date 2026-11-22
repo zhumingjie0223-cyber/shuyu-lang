@@ -1,5 +1,5 @@
 CXX      := clang++
-CXXFLAGS := -std=c++17 -O3 -Wall -Wextra -fPIC
+CXXFLAGS := -std=c++17 -O3 -Wall -Wextra -fPIC -pthread
 AR       := ar
 
 LIB_SRCS := shuyu_lexicon.cpp shuyu_interpreter.cpp shuyu_ops.cpp shuyu_c_api.cpp

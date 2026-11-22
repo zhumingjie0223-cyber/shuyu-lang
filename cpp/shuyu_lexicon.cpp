@@ -126,23 +126,7 @@ bool isAllDigits(const std::string& s) {
     return true;
 }
 
-// 按 UTF-8 码点切分
-std::vector<std::string> splitUtf8Chars(const std::string& s) {
-    std::vector<std::string> out;
-    size_t i = 0;
-    while (i < s.size()) {
-        unsigned char c = static_cast<unsigned char>(s[i]);
-        size_t len = 1;
-        if (c < 0x80) len = 1;
-        else if ((c & 0xE0) == 0xC0) len = 2;
-        else if ((c & 0xF0) == 0xE0) len = 3;
-        else if ((c & 0xF8) == 0xF0) len = 4;
-        if (i + len > s.size()) len = s.size() - i;
-        out.push_back(s.substr(i, len));
-        i += len;
-    }
-    return out;
-}
+
 
 std::vector<uint16_t> utf8ToUtf16(const std::string& s) {
     std::vector<uint16_t> out;
@@ -243,11 +227,12 @@ LexiconEngine::LexiconEngine() {
             item.han = std::string(row.han) + kHanT[i];
             item.sem = row.sem;
             item.layer = row.layer;
-            uint64_t idx = static_cast<uint64_t>(cores_.size());
-            latIndex_[0][item.lat] = idx;
-            hanIndex_[0][item.han] = idx;
             cores_.push_back(std::move(item));
         }
+    }
+    for (size_t idx = 0; idx < cores_.size(); ++idx) {
+        latIndex_[0][cores_[idx].lat] = static_cast<uint64_t>(idx);
+        hanIndex_[0][cores_[idx].han] = static_cast<uint64_t>(idx);
     }
 
     manis_.reserve(NM);
@@ -257,11 +242,12 @@ LexiconEngine::LexiconEngine() {
             item.lat = std::string(row.lat) + kLatA[i];
             item.han = std::string(row.han) + kHanA[i];
             item.sem = row.sem;
-            uint64_t idx = static_cast<uint64_t>(manis_.size());
-            latIndex_[1][item.lat] = idx;
-            hanIndex_[1][item.han] = idx;
             manis_.push_back(std::move(item));
         }
+    }
+    for (size_t idx = 0; idx < manis_.size(); ++idx) {
+        latIndex_[1][manis_[idx].lat] = static_cast<uint64_t>(idx);
+        hanIndex_[1][manis_[idx].han] = static_cast<uint64_t>(idx);
     }
 
     stats_.reserve(NS);
@@ -271,11 +257,12 @@ LexiconEngine::LexiconEngine() {
             item.lat = std::string(row.lat) + kLatF[i];
             item.han = std::string(row.han) + kHanF[i];
             item.sem = row.sem;
-            uint64_t idx = static_cast<uint64_t>(stats_.size());
-            latIndex_[2][item.lat] = idx;
-            hanIndex_[2][item.han] = idx;
             stats_.push_back(std::move(item));
         }
+    }
+    for (size_t idx = 0; idx < stats_.size(); ++idx) {
+        latIndex_[2][stats_[idx].lat] = static_cast<uint64_t>(idx);
+        hanIndex_[2][stats_[idx].han] = static_cast<uint64_t>(idx);
     }
 
     scals_.reserve(NK);
@@ -285,20 +272,21 @@ LexiconEngine::LexiconEngine() {
             item.lat = std::string(row.lat) + kLatS[i];
             item.han = std::string(row.han) + kHanS[i];
             item.sem = row.sem;
-            uint64_t idx = static_cast<uint64_t>(scals_.size());
-            latIndex_[3][item.lat] = idx;
-            hanIndex_[3][item.han] = idx;
             scals_.push_back(std::move(item));
         }
+    }
+    for (size_t idx = 0; idx < scals_.size(); ++idx) {
+        latIndex_[3][scals_[idx].lat] = static_cast<uint64_t>(idx);
+        hanIndex_[3][scals_[idx].han] = static_cast<uint64_t>(idx);
     }
 
     phases_.reserve(NP);
     for (const auto& row : kPhaseBase) {
-        AxisItem item{row.lat, row.han, row.sem};
-        uint64_t idx = static_cast<uint64_t>(phases_.size());
-        latIndex_[4][item.lat] = idx;
-        hanIndex_[4][item.han] = idx;
-        phases_.push_back(std::move(item));
+        phases_.push_back(AxisItem{row.lat, row.han, row.sem});
+    }
+    for (size_t idx = 0; idx < phases_.size(); ++idx) {
+        latIndex_[4][phases_[idx].lat] = static_cast<uint64_t>(idx);
+        hanIndex_[4][phases_[idx].han] = static_cast<uint64_t>(idx);
     }
 
     feelTable_ = {
@@ -348,26 +336,28 @@ std::optional<WordEntry> LexiconEngine::decode(uint64_t n) const {
     return out;
 }
 
-int64_t LexiconEngine::encode(const std::string& word) const {
-    const std::string dot = "·";
+int64_t LexiconEngine::encode(std::string_view word) const {
+    constexpr std::string_view dot = "·";
     const size_t dotPos = word.rfind(dot);
-    if (dotPos == std::string::npos) return -1;
+    if (dotPos == std::string_view::npos) return -1;
 
-    const std::string head = word.substr(0, dotPos);
-    const std::string ph = word.substr(dotPos + dot.size());
+    const std::string_view head = word.substr(0, dotPos);
+    const std::string_view ph = word.substr(dotPos + dot.size());
 
-    std::vector<std::string> parts;
+    std::array<std::string_view, 4> parts{};
+    size_t partCount = 0;
     size_t start = 0;
     while (start <= head.size()) {
+        if (partCount >= 4) return -1;
         size_t dash = head.find('-', start);
-        if (dash == std::string::npos) {
-            parts.push_back(head.substr(start));
+        if (dash == std::string_view::npos) {
+            parts[partCount++] = head.substr(start);
             break;
         }
-        parts.push_back(head.substr(start, dash - start));
+        parts[partCount++] = head.substr(start, dash - start);
         start = dash + 1;
     }
-    if (parts.size() < 3 || parts.size() > 4) return -1;
+    if (partCount < 3 || partCount > 4) return -1;
 
     auto ci = latIndex_[0].find(parts[0]);
     auto mi = latIndex_[1].find(parts[1]);
@@ -379,7 +369,7 @@ int64_t LexiconEngine::encode(const std::string& word) const {
     }
 
     uint64_t kiVal = 0;
-    if (parts.size() == 4) {
+    if (partCount == 4) {
         auto ki = latIndex_[3].find(parts[3]);
         if (ki == latIndex_[3].end() || ki->second == 0) return -1;
         kiVal = ki->second;
@@ -388,20 +378,35 @@ int64_t LexiconEngine::encode(const std::string& word) const {
     return static_cast<int64_t>(idOf(ci->second, mi->second, si->second, kiVal, pi->second));
 }
 
-int64_t LexiconEngine::encodeHan(const std::string& han) const {
-    const auto chars = splitUtf8Chars(han);
-    if (chars.size() < 4) return -1;
-    auto piIt = hanIndex_[4].find(chars.back());
+int64_t LexiconEngine::encodeHan(std::string_view han) const {
+    // 零拷贝记录 UTF-8 码点字节偏移，避免每次切分产生堆分配
+    std::array<size_t, 16> offsets{};
+    size_t charCount = 0;
+    size_t i = 0;
+    while (i < han.size()) {
+        if (charCount >= 15) return -1; // 最长合法汉译不超过 10 个汉字
+        offsets[charCount++] = i;
+        unsigned char c = static_cast<unsigned char>(han[i]);
+        size_t len = 1;
+        if (c < 0x80) len = 1;
+        else if ((c & 0xE0) == 0xC0) len = 2;
+        else if ((c & 0xF0) == 0xE0) len = 3;
+        else if ((c & 0xF8) == 0xF0) len = 4;
+        if (i + len > han.size()) len = han.size() - i;
+        i += len;
+    }
+    offsets[charCount] = han.size();
+    if (charCount < 4) return -1;
+
+    auto seg = [&](size_t a, size_t b) -> std::string_view {
+        return han.substr(offsets[a], offsets[b] - offsets[a]);
+    };
+
+    auto piIt = hanIndex_[4].find(seg(charCount - 1, charCount));
     if (piIt == hanIndex_[4].end()) return -1;
     const uint64_t pi = piIt->second;
 
-    const size_t L = chars.size() - 1;
-    auto seg = [&](size_t a, size_t b) {
-        std::string r;
-        for (size_t i = a; i < b; ++i) r += chars[i];
-        return r;
-    };
-
+    const size_t L = charCount - 1;
     int64_t found = -1;
     int count = 0;
     for (size_t lc : {size_t(1), size_t(2)}) {
